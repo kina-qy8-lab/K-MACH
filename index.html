@@ -1,0 +1,764 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Quest Learning Matcher</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    
+    <!-- Import Map: ライブラリの読み込み -->
+    <script type="importmap">
+    {
+        "imports": {
+            "react": "https://esm.sh/react@18.2.0",
+            "react-dom/client": "https://esm.sh/react-dom@18.2.0/client",
+            "lucide-react": "https://esm.sh/lucide-react@0.263.1",
+            "firebase/app": "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js",
+            "firebase/auth": "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js",
+            "firebase/firestore": "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js"
+        }
+    }
+    </script>
+    <style>body { font-family: sans-serif; }</style>
+</head>
+<body class="bg-gray-50 text-slate-800">
+    <div id="root"></div>
+
+    <script type="text/babel" data-type="module">
+        import React, { useState, useEffect, useMemo } from 'react';
+        import { createRoot } from 'react-dom/client';
+        import { 
+            Users, Layers, Settings, RefreshCw, Star, Heart, ArrowRight, 
+            CheckCircle, X, Zap, Award, Smile, Sparkles, ThumbsUp, Lock,
+            Edit3, Lightbulb, Download, LogOut, Upload, Database, AlertCircle
+        } from 'lucide-react';
+        
+        // --- Firebase Imports & Config ---
+        import { initializeApp } from "firebase/app";
+        import { 
+            getAuth, signInWithPopup, GoogleAuthProvider, signOut, onAuthStateChanged 
+        } from "firebase/auth";
+        import { 
+            getFirestore, collection, doc, getDoc, setDoc, updateDoc, onSnapshot, writeBatch
+        } from "firebase/firestore";
+
+        // 【重要】ここにFirebaseコンソールからコピーした設定値を貼り付けてください
+        const firebaseConfig = {
+            apiKey: "AIzaSyCGIKgIuSlee2SxUlNsatUH1l7C2BkH3hc",
+            authDomain: "k-mach.firebaseapp.com",
+            projectId: "k-mach",
+            storageBucket: "k-mach.firebasestorage.app",
+            messagingSenderId: "735279357382",
+            appId: "1:735279357382:web:8dcecd5d5f01c7337826c7"
+        };
+
+        // Initialize Firebase
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const db = getFirestore(app);
+
+        // --- Constants ---
+        const CATEGORIES = [
+            { id: 'NAT_MAT', group: '自然科学分野', name: '物質・材料', color: 'from-blue-500 to-cyan-400' },
+            { id: 'NAT_BIO', group: '自然科学分野', name: '生命・生物', color: 'from-green-500 to-emerald-400' },
+            { id: 'NAT_EAR', group: '自然科学分野', name: '地球・環境', color: 'from-teal-500 to-green-400' },
+            { id: 'NAT_PHY', group: '自然科学分野', name: '物理・工学', color: 'from-indigo-500 to-blue-400' },
+            { id: 'NAT_INF', group: '自然科学分野', name: '数理・情報', color: 'from-violet-500 to-purple-400' },
+            { id: 'SOC_ECO', group: '社会科学分野', name: '経済・産業', color: 'from-orange-500 to-amber-400' },
+            { id: 'SOC_PUB', group: '社会科学分野', name: '政策・行政・公共', color: 'from-red-500 to-rose-400' },
+            { id: 'SOC_EDU', group: '社会科学分野', name: '教育・心理', color: 'from-pink-500 to-rose-400' },
+            { id: 'SOC_SOC', group: '社会科学分野', name: '社会・文化', color: 'from-fuchsia-500 to-pink-400' },
+            { id: 'SOC_INT', group: '社会科学分野', name: '国際・地理', color: 'from-yellow-500 to-orange-400' },
+            { id: 'HUM_HIS', group: '人文科学分野', name: '歴史・地域史', color: 'from-amber-600 to-yellow-500' },
+            { id: 'HUM_LNG', group: '人文科学分野', name: '言語・コミュニケーション', color: 'from-cyan-600 to-blue-500' },
+            { id: 'HUM_LIT', group: '人文科学分野', name: '文学・物語', color: 'from-emerald-600 to-teal-500' },
+            { id: 'HUM_PHL', group: '人文科学分野', name: '哲学・倫理', color: 'from-indigo-600 to-violet-500' },
+            { id: 'HUM_ART', group: '人文科学分野', name: '芸術・デザイン', color: 'from-rose-600 to-pink-500' },
+        ];
+
+        const TOPIC_TAGS = [
+            { id: 'T01', name: '力学（身体/スポーツ）' }, { id: 'T02', name: '力学（構造/滑空）' },
+            { id: 'T03', name: '地震・防災' }, { id: 'T04', name: '建築' }, { id: 'T05', name: '紙飛行機' },
+            { id: 'T06', name: 'スポーツ（動作解析）' }, { id: 'T07', name: 'スポーツ（道具）' },
+            { id: 'T08', name: 'モータースポーツ' }, { id: 'T09', name: '音・色' },
+            { id: 'T10', name: '物質（成分/材料）' }, { id: 'T11', name: '薬（成分）' },
+            { id: 'T12', name: '化粧品' }, { id: 'T13', name: '環境（光害/CO2）' },
+            { id: 'T14', name: '食品（成分/分析）' }, { id: 'T15', name: '植物（生育/土壌）' },
+            { id: 'T16', name: '生物（昆虫/微生物）' }, { id: 'T17', name: '微生物（発酵）' },
+            { id: 'T18', name: 'タンパク質酵素' }, { id: 'T19', name: '宇宙・天文' },
+            { id: 'T20', name: '天気' }, { id: 'T21', name: '海' }, { id: 'T22', name: 'ヒートアイランド' },
+            { id: 'T23', name: '定義・法則・数式' }, { id: 'T24', name: '解析（画像/動画）' },
+            { id: 'T25', name: 'シミュレーション' }, { id: 'T26', name: '統計・データ' },
+            { id: 'T27', name: '教育×ICT' }, { id: 'T28', name: 'AI・生成AI' }, { id: 'T29', name: '株・経済' },
+            { id: 'T30', name: 'SDGs' }, { id: 'T31', name: '安全保障' }, { id: 'T32', name: '国際情勢' },
+            { id: 'T33', name: '文化と社会' }, { id: 'T34', name: '法律・校則' }, { id: 'T35', name: '地域の特色' },
+            { id: 'T36', name: '経済活動' }, { id: 'T37', name: '環境と満足度' }, { id: 'T38', name: '映画・芸術' },
+            { id: 'T39', name: '価格と価値' }, { id: 'T40', name: '効率化' }, { id: 'T41', name: '行動心理' },
+            { id: 'T42', name: '観光' }, { id: 'T43', name: '認知バイアス' }, { id: 'T44', name: 'マーケティング' },
+            { id: 'T45', name: '子ども' }, { id: 'T46', name: 'SNS・ネット' }, { id: 'T47', name: 'メディア' },
+            { id: 'T48', name: '嘘・フェイク' }, { id: 'T49', name: '学習効果' }, { id: 'T50', name: '色彩心理' },
+            { id: 'T51', name: '睡眠・健康' }, { id: 'T52', name: 'ストレス' }, { id: 'T53', name: 'モチベーション' },
+            { id: 'T54', name: 'デザイン' }, { id: 'T55', name: '写真・映像' }, { id: 'T56', name: '歴史・背景' },
+            { id: 'T57', name: '言語・方言' }
+        ];
+
+        const APPROACH_TAGS = [
+            { id: 'A01', name: '文献調査', icon: '📚' }, { id: 'A02', name: '公開データ', icon: '📊' },
+            { id: 'A03', name: 'アンケート', icon: '📝' }, { id: 'A04', name: 'インタビュー', icon: '🎤' },
+            { id: 'A05', name: '行動観察', icon: '👀' }, { id: 'A06', name: '実験', icon: '⚗️' },
+            { id: 'A07', name: '計測', icon: '⏱️' }, { id: 'A08', name: '画像動画解析', icon: '🎥' },
+            { id: 'A09', name: 'テキスト分析', icon: '💬' }, { id: 'A10', name: '統計解析', icon: '📈' },
+            { id: 'A11', name: '開発', icon: '💻' }, { id: 'A12', name: 'シミュレーション', icon: '🎮' },
+            { id: 'A13', name: 'モノづくり', icon: '🛠️' }
+        ];
+
+        const SKILLS = ['データ分析', '統計処理', 'プログラミング', '英語文献読解', '実験手技', '工作・DIY', 'デザイン', '動画編集', 'リーダーシップ', 'プレゼン'];
+        const PHASE = { INPUT: 'INPUT', CHECK: 'CHECK', MATCHING: 'MATCHING', PUBLISH: 'PUBLISH' };
+
+        // --- Logic: Matching ---
+        const getRecommendedCandidates = (currentUser, allStudents) => {
+            if (!currentUser || !allStudents) return [];
+            const candidates = allStudents.filter(s => s.id !== currentUser.id);
+            const scoredCandidates = candidates.map(student => {
+                let score = 0;
+                if (student.category === currentUser.category) score += 3;
+                const cTopics = student.topics || [];
+                const myTopics = currentUser.topics || [];
+                const commonTopics = cTopics.filter(t => myTopics.includes(t));
+                score += commonTopics.length * 5;
+                const cApps = student.approaches || [];
+                const myApps = currentUser.approaches || [];
+                const commonApps = cApps.filter(a => myApps.includes(a));
+                score += commonApps.length * 2;
+                return { ...student, affinityScore: score };
+            });
+            scoredCandidates.sort((a, b) => b.affinityScore - a.affinityScore);
+            const topPicks = scoredCandidates.slice(0, 25);
+            const rest = scoredCandidates.slice(25);
+            const randomPicks = [];
+            const randomCount = Math.min(5, rest.length);
+            const tempRest = [...rest];
+            for (let i = 0; i < randomCount; i++) {
+                if (tempRest.length === 0) break;
+                const idx = Math.floor(Math.random() * tempRest.length);
+                randomPicks.push(tempRest[idx]);
+                tempRest.splice(idx, 1);
+            }
+            return [...topPicks, ...randomPicks].sort(() => Math.random() - 0.5);
+        };
+
+        const runWeightedMatchingAlgorithm = (students) => {
+            if (!students || students.length === 0) return [];
+            const W_MUTUAL_LOVE=1000, W_ONE_WAY_LOVE=100, W_TAG_MATCH=5, W_CAT_MATCH=3;
+            const scoreMatrix = {}; 
+            
+            students.forEach(s1 => {
+                scoreMatrix[s1.id] = {};
+                students.forEach(s2 => {
+                    if (s1.id === s2.id) return;
+                    let score = 0;
+                    if (s1.category === s2.category) score += W_CAT_MATCH;
+                    const s1t = s1.topics || []; const s2t = s2.topics || [];
+                    score += s1t.filter(t => s2t.includes(t)).length * W_TAG_MATCH;
+                    const votes = s1.votes || {};
+                    if (votes[s2.id]?.love) score += W_ONE_WAY_LOVE;
+                    scoreMatrix[s1.id][s2.id] = score;
+                });
+            });
+
+            const unassigned = new Set(students.map(s => s.id));
+            const groups = [];
+            const MIN_SIZE = 3, MAX_SIZE = 5;
+
+            // Phase 1: Cores
+            while (unassigned.size > 0) {
+                let bestPair = null, maxScore = -1;
+                const arr = Array.from(unassigned).sort(() => Math.random() - 0.5);
+                for (let i = 0; i < arr.length; i++) {
+                    for (let j = i + 1; j < arr.length; j++) {
+                        const id1 = arr[i], id2 = arr[j];
+                        let pairScore = (scoreMatrix[id1][id2] || 0) + (scoreMatrix[id2][id1] || 0);
+                        const v1 = students.find(s=>s.id===id1)?.votes?.[id2] || {};
+                        const v2 = students.find(s=>s.id===id2)?.votes?.[id1] || {};
+                        if (v1.love && v2.love) pairScore += W_MUTUAL_LOVE * 2;
+                        if (pairScore > maxScore) { maxScore = pairScore; bestPair = [id1, id2]; }
+                    }
+                }
+                if (!bestPair) break;
+                const newGroup = [...bestPair];
+                newGroup.forEach(id => unassigned.delete(id));
+                groups.push(newGroup);
+                if (unassigned.size === 0) break;
+            }
+            
+            // Phase 2: Grow
+            for (const group of groups) {
+                while (group.length < 4 && unassigned.size > 0) {
+                    let bestCand = null, maxCandScore = -Infinity;
+                    for (const candId of unassigned) {
+                        let totalScore = 0;
+                        group.forEach(mId => {
+                            totalScore += (scoreMatrix[candId][mId] || 0) + (scoreMatrix[mId][candId] || 0);
+                            const v = students.find(s=>s.id===candId)?.votes?.[mId] || {};
+                            if(v.love) totalScore += W_ONE_WAY_LOVE;
+                        });
+                        if (totalScore > maxCandScore) { maxCandScore = totalScore; bestCand = candId; }
+                    }
+                    if (bestCand) { group.push(bestCand); unassigned.delete(bestCand); } else break;
+                }
+            }
+
+            // Phase 3: Leftovers
+            const leftovers = Array.from(unassigned);
+            const remainingLeftovers = [];
+            leftovers.forEach(candId => {
+                let bestGroupIdx = -1, maxFitScore = -Infinity;
+                groups.forEach((group, idx) => {
+                    if (group.length >= MAX_SIZE) return;
+                    let score = 0;
+                    group.forEach(mId => score += (scoreMatrix[candId][mId] || 0) + (scoreMatrix[mId][candId] || 0));
+                    if (score > maxFitScore) { maxFitScore = score; bestGroupIdx = idx; }
+                });
+                if (bestGroupIdx !== -1) groups[bestGroupIdx].push(candId);
+                else remainingLeftovers.push(candId);
+            });
+            if (remainingLeftovers.length > 0) groups.push(remainingLeftovers);
+            
+            // Phase 4: Balancing
+            let finalGroups = [], bufferGroup = [];
+            groups.forEach(g => { if (g.length < MIN_SIZE) bufferGroup.push(...g); else finalGroups.push(g); });
+
+            const getCat = (sid) => students.find(s => s.id === sid)?.category;
+            const getGroupCat = (group) => group.length > 0 ? getCat(group[0]) : null;
+
+            let remainingBuffer = [];
+            bufferGroup.forEach(pid => {
+                const pCat = getCat(pid);
+                const compatibleGroups = finalGroups.filter(g => getGroupCat(g) === pCat && g.length < MAX_SIZE);
+                if (compatibleGroups.length > 0) {
+                    compatibleGroups.sort((a,b) => a.length - b.length);
+                    compatibleGroups[0].push(pid);
+                } else remainingBuffer.push(pid);
+            });
+
+            const byCategory = {};
+            remainingBuffer.forEach(pid => {
+                const cat = getCat(pid);
+                if(!byCategory[cat]) byCategory[cat] = [];
+                byCategory[cat].push(pid);
+            });
+
+            Object.keys(byCategory).forEach(cat => {
+                const members = byCategory[cat];
+                if (members.length >= MIN_SIZE) finalGroups.push(members);
+                else {
+                    const targetGroups = finalGroups.filter(g => getGroupCat(g) === cat);
+                    targetGroups.sort((a,b) => a.length - b.length);
+                    let assignedCount = 0;
+                    for (const g of targetGroups) {
+                        if (assignedCount >= members.length) break;
+                        if (g.length < MAX_SIZE + 1) { g.push(members[assignedCount]); assignedCount++; }
+                    }
+                    if (assignedCount < members.length) finalGroups.push(members.slice(assignedCount));
+                }
+            });
+
+            const resultGroups = [];
+            const groupsToCheck = finalGroups.length > 0 ? finalGroups : groups;
+            groupsToCheck.forEach(group => {
+                if (group.length <= MAX_SIZE) resultGroups.push(group);
+                else {
+                    const size = group.length;
+                    const numSplits = Math.ceil(size / MAX_SIZE);
+                    const splitSize = Math.ceil(size / numSplits);
+                    let remaining = [...group];
+                    while(remaining.length > 0) resultGroups.push(remaining.splice(0, splitSize));
+                }
+            });
+            return resultGroups;
+        };
+
+        // --- CSV Import Component ---
+        const DataImporter = ({ onImport }) => {
+            const [text, setText] = useState('');
+            
+            const handleImport = () => {
+                // CSV Format: email,classId,studentNumber,name,category,theme,role
+                const rows = text.trim().split('\n');
+                const data = [];
+                rows.forEach(row => {
+                    const cols = row.split(',').map(c => c.trim());
+                    if(cols.length >= 4) {
+                        data.push({
+                            id: cols[0], // Email as ID
+                            email: cols[0],
+                            classId: parseInt(cols[1]),
+                            studentNumber: parseInt(cols[2]),
+                            name: cols[3],
+                            category: cols[4] || 'NAT_MAT',
+                            theme: cols[5] || '',
+                            role: cols[6] || 'student', // default student
+                            topics: [], approaches: [], skills: [], comment: '', votes: {}
+                        });
+                    }
+                });
+                onImport(data);
+                setText('');
+            };
+
+            return (
+                <div className="bg-gray-800 p-4 rounded-xl border border-gray-700 mt-4">
+                    <h3 className="font-bold text-gray-300 mb-2 flex items-center gap-2"><Upload size={16}/> 生徒データ一括登録 (CSV)</h3>
+                    <p className="text-xs text-gray-500 mb-2">Format: email, class, number, name, categoryID, theme, role</p>
+                    <textarea 
+                        className="w-full h-32 bg-gray-900 text-xs font-mono text-green-400 p-2 rounded border border-gray-600 mb-2"
+                        placeholder="student1@example.com, 1, 1, 山田太郎, NAT_MAT, 研究テーマ, student"
+                        value={text}
+                        onChange={(e) => setText(e.target.value)}
+                    />
+                    <button onClick={handleImport} className="bg-green-600 hover:bg-green-500 text-white px-4 py-2 rounded-lg text-xs font-bold w-full">登録を実行</button>
+                </div>
+            );
+        };
+
+        // --- Components ---
+
+        const LoginScreen = ({ onLogin }) => (
+            <div className="min-h-screen flex items-center justify-center bg-gray-100 p-4">
+                <div className="bg-white p-8 rounded-3xl shadow-xl max-w-md w-full text-center">
+                    <div className="bg-blue-600 w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-6 shadow-lg shadow-blue-200">
+                        <Sparkles size={32} className="text-white"/>
+                    </div>
+                    <h1 className="text-2xl font-black text-gray-800 mb-2">Quest Matcher</h1>
+                    <p className="text-gray-500 mb-8">Googleアカウントでログインしてください。<br/>登録済みのユーザーのみ利用可能です。</p>
+                    <button 
+                        onClick={onLogin}
+                        className="w-full bg-white border border-gray-300 text-gray-700 font-bold py-3 rounded-xl flex items-center justify-center gap-3 hover:bg-gray-50 transition"
+                    >
+                        <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" className="w-5 h-5"/>
+                        Googleでログイン
+                    </button>
+                </div>
+            </div>
+        );
+
+        const TeacherPanel = ({ phase, studentCount, handleMatching, handlePublish, reset, onExport, onImportData }) => {
+            const updatePhase = async (newPhase) => {
+                await setDoc(doc(db, 'system', 'config'), { phase: newPhase }, { merge: true });
+            };
+
+            return (
+                <div className="bg-gray-900 text-white p-4 shadow-inner">
+                    <div className="max-w-6xl mx-auto">
+                        <div className="flex flex-col md:flex-row justify-between items-center gap-4 mb-4">
+                            <div>
+                                <h2 className="text-sm font-bold text-gray-400 uppercase tracking-widest mb-1">Control Panel</h2>
+                                <div className="text-2xl font-bold flex items-center gap-3"><span>登録者数: {studentCount}名</span></div>
+                            </div>
+                            <div className="flex gap-2">
+                                {phase === PHASE.INPUT && (
+                                    <button onClick={() => updatePhase(PHASE.CHECK)} className="bg-gradient-to-r from-green-500 to-emerald-600 px-6 py-3 rounded-xl font-bold shadow-lg hover:scale-105 transition flex items-center gap-2">
+                                        入力締切 → チェックへ <ArrowRight size={18}/>
+                                    </button>
+                                )}
+                                {phase === PHASE.CHECK && (
+                                    <button onClick={handleMatching} className="bg-gradient-to-r from-purple-500 to-indigo-600 px-6 py-3 rounded-xl font-bold shadow-lg hover:scale-105 transition flex items-center gap-2">
+                                        <Layers size={18}/> マッチング実行
+                                    </button>
+                                )}
+                                {phase === PHASE.MATCHING && (
+                                    <>
+                                        <button onClick={handleMatching} className="bg-gray-700 hover:bg-gray-600 px-4 py-3 rounded-xl font-bold transition flex items-center gap-2"><RefreshCw size={18}/> 再生成</button>
+                                        <button onClick={handlePublish} className="bg-gradient-to-r from-orange-500 to-red-500 px-6 py-3 rounded-xl font-bold shadow-lg hover:scale-105 transition flex items-center gap-2"><Star size={18} fill="white"/> 公開する</button>
+                                    </>
+                                )}
+                                {phase === PHASE.PUBLISH && (
+                                    <>
+                                        <button onClick={onExport} className="bg-blue-600 hover:bg-blue-500 px-6 py-3 rounded-xl font-bold shadow-lg transition flex items-center gap-2"><Download size={18}/> CSV出力</button>
+                                        <button onClick={reset} className="border border-red-500/50 text-red-400 hover:bg-red-500/10 px-6 py-3 rounded-xl font-bold transition">リセット</button>
+                                    </>
+                                )}
+                            </div>
+                        </div>
+                        {/* Only show import tool in INPUT phase for setup */}
+                        {phase === PHASE.INPUT && <DataImporter onImport={onImportData} />}
+                    </div>
+                </div>
+            );
+        };
+
+        const ModernInputForm = ({ currentUser, onSave }) => {
+            const [isSubmitted, setIsSubmitted] = useState(false);
+            const [formData, setFormData] = useState({ topics: [], approaches: [], skills: [], comment: '' });
+            
+            // Load initial data
+            useEffect(() => { 
+                if (currentUser) {
+                    setFormData(prev => ({ ...prev, ...currentUser }));
+                    // If comment is filled, assume submitted (simple logic)
+                    if(currentUser.comment) setIsSubmitted(true);
+                } 
+            }, [currentUser]);
+
+            const handleSubmit = () => { onSave(formData); setIsSubmitted(true); };
+            
+            const toggleSelection = (field, value) => {
+                setFormData(prev => {
+                    const current = prev[field] || [];
+                    if (current.includes(value)) return { ...prev, [field]: current.filter(v => v !== value) };
+                    if (field === 'topics' && current.length >= 5) return prev;
+                    return { ...prev, [field]: [...current, value] };
+                });
+            };
+
+            const currentCategory = CATEGORIES.find(c => c.id === currentUser.category) || CATEGORIES[0];
+            const sectionTitleClass = "text-lg font-bold text-gray-800 mb-4 flex items-center gap-2 border-b-2 border-gray-100 pb-2";
+
+            if (isSubmitted) {
+                return (
+                    <div className="flex flex-col items-center justify-center min-h-[70vh] p-6 text-center">
+                        <div className="bg-blue-50 p-6 rounded-full mb-6 animate-pulse"><CheckCircle size={64} className="text-blue-500" /></div>
+                        <h2 className="text-3xl font-black text-gray-800 mb-2">登録完了！</h2>
+                        <p className="text-gray-500 mb-8">先生からの合図があるまで、このままお待ちください。</p>
+                        <button onClick={() => setIsSubmitted(false)} className="flex items-center gap-2 text-gray-400 hover:text-gray-600 font-bold transition"><Edit3 size={16} /> 修正する</button>
+                    </div>
+                );
+            }
+
+            return (
+                <div className="max-w-xl mx-auto p-6 pb-24">
+                    <div className="text-center mb-8"><h2 className="text-3xl font-black text-gray-800 mb-2">My Profile</h2><p className="text-gray-500">あなたの「得意」や「興味」を教えてください</p></div>
+                    <div className="space-y-8">
+                        <section className="bg-white p-6 rounded-3xl shadow-sm border border-gray-100 relative overflow-hidden">
+                            <div className="absolute top-0 right-0 bg-gray-100 px-3 py-1 rounded-bl-xl text-xs text-gray-500 font-bold flex items-center gap-1"><Lock size={10} /> 固定情報</div>
+                            <div className="flex gap-4 mb-4">
+                                <div className="w-1/3"><label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Class</label><div className="w-full p-3 bg-gray-100 rounded-xl font-bold text-gray-700">{currentUser.classId}組</div></div>
+                                <div className="w-1/3"><label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">No.</label><div className="w-full p-3 bg-gray-100 rounded-xl font-bold text-gray-700">{currentUser.studentNumber}番</div></div>
+                            </div>
+                            <div className="mb-4"><label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Name</label><div className="w-full text-xl font-bold border-b-2 border-gray-200 py-1 bg-transparent text-gray-800">{currentUser.name}</div></div>
+                            <div className="mb-4"><label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Category</label><div className={`p-3 rounded-xl bg-gradient-to-r ${currentCategory.color} text-white shadow-sm`}><div className="text-[10px] opacity-80">{currentCategory.group}</div><div className="font-bold">{currentCategory.name}</div></div></div>
+                            <div><label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Research Theme</label><div className="w-full p-3 bg-gray-100 rounded-xl font-bold text-gray-700 text-sm leading-snug">{currentUser.theme || "(未設定)"}</div></div>
+                        </section>
+                        <section>
+                            <label className={sectionTitleClass}><Sparkles size={20} className="text-purple-500"/> トピックカードを選択（最大5つ）<span className="ml-auto text-xs font-bold text-blue-500 bg-blue-50 px-2 py-1 rounded-full">{(formData.topics||[]).length}/5</span></label>
+                            <div className="flex flex-wrap gap-2">{TOPIC_TAGS.map(t => (<button key={t.id} onClick={() => toggleSelection('topics', t.id)} className={`text-xs px-4 py-2 rounded-lg border font-bold transition-all duration-200 ${(formData.topics||[]).includes(t.id) ? 'bg-blue-600 border-blue-600 text-white shadow-md transform scale-105' : 'bg-white border-gray-200 text-gray-600 hover:border-blue-300 hover:bg-gray-50'}`}>{t.name}</button>))}</div>
+                        </section>
+                        <section>
+                            <label className={sectionTitleClass}><Settings size={20} className="text-green-500"/> アプローチ（複数可）</label>
+                            <div className="flex flex-wrap gap-2">{APPROACH_TAGS.map(a => (<button key={a.id} onClick={() => toggleSelection('approaches', a.id)} className={`text-xs px-4 py-2 rounded-lg border font-bold transition-all duration-200 flex items-center gap-2 ${(formData.approaches||[]).includes(a.id) ? 'bg-green-600 border-green-600 text-white shadow-md transform scale-105' : 'bg-white border-gray-200 text-gray-600 hover:border-green-300 hover:bg-gray-50'}`}><span>{a.icon}</span><span>{a.name}</span></button>))}</div>
+                        </section>
+                        <section>
+                            <label className={sectionTitleClass}><Zap size={20} className="text-orange-500"/> スキル（複数可）</label>
+                            <div className="flex flex-wrap gap-2">{SKILLS.map(s => (<button key={s} onClick={() => toggleSelection('skills', s)} className={`text-xs px-4 py-2 rounded-lg border font-bold transition-all duration-200 ${(formData.skills||[]).includes(s) ? 'bg-purple-600 border-purple-600 text-white shadow-md transform scale-105' : 'bg-white border-gray-200 text-gray-600 hover:border-purple-300 hover:bg-gray-50'}`}>{s}</button>))}</div>
+                        </section>
+                        <section className="bg-white p-6 rounded-3xl shadow-sm border border-gray-100">
+                            <label className={sectionTitleClass}><Smile size={20} className="text-pink-500"/> ひとこと</label>
+                            <textarea className="w-full p-4 bg-gray-50 rounded-2xl text-gray-700 outline-none focus:ring-2 focus:ring-blue-500/20" rows="3" value={formData.comment} onChange={e => setFormData({...formData, comment: e.target.value})} placeholder="特にやりたいこと、こんな人（やる気やスキル）を募集！などを記述。" />
+                        </section>
+                        <button onClick={handleSubmit} className="w-full bg-gray-900 text-white font-bold text-lg py-4 rounded-2xl shadow-xl hover:bg-gray-800 hover:scale-[1.02] transition-all">プロフィール登録完了</button>
+                    </div>
+                </div>
+            );
+        };
+
+        const CardStack = ({ currentUser, students, onVote }) => {
+            const [currentIndex, setCurrentIndex] = useState(0);
+            const [direction, setDirection] = useState(null);
+            const [selections, setSelections] = useState({ direction: false, skill: false, love: false });
+            
+            const candidates = useMemo(() => getRecommendedCandidates(currentUser, students), [students.length, currentUser.id]);
+            const currentStudent = candidates[currentIndex];
+            
+            useEffect(() => { setSelections({ direction: false, skill: false, love: false }); }, [currentIndex]);
+            const toggleSelection = (type) => setSelections(prev => ({ ...prev, [type]: !prev[type] }));
+            const hasSelection = useMemo(() => Object.values(selections).some(v => v), [selections]);
+            
+            const handleSwipe = (dir) => {
+                if (!currentStudent || direction || (dir === 'right' && !hasSelection)) return;
+                setDirection(dir);
+                if (dir === 'right') onVote(currentStudent.id, selections);
+                setTimeout(() => { setDirection(null); setCurrentIndex(prev => prev + 1); }, 400);
+            };
+
+            if (currentIndex >= candidates.length) return <div className="flex flex-col items-center justify-center h-[70vh] text-center p-6"><div className="bg-green-100 p-6 rounded-full mb-6 animate-bounce"><CheckCircle size={64} className="text-green-600" /></div><h2 className="text-2xl font-bold text-gray-800 mb-2">チェック完了！</h2><p className="text-gray-500">先生のマッチング開始をお待ちください。</p></div>;
+
+            const categoryData = CATEGORIES.find(c => c.id === currentStudent.category) || CATEGORIES[0];
+            let cardClass = "absolute inset-0 bg-white rounded-3xl shadow-2xl border border-gray-100 overflow-hidden flex flex-col transition-all duration-500 ease-out";
+            if (direction === 'left') cardClass += " transform -translate-x-[150%] -rotate-12 opacity-0";
+            else if (direction === 'right') cardClass += " transform translate-x-[150%] rotate-12 opacity-0";
+
+            return (
+                <div className="flex flex-col items-center justify-center min-h-[85vh] p-4 overflow-hidden relative">
+                    <div className="w-full max-w-md aspect-[3/4] relative">
+                        {currentIndex + 1 < candidates.length && <div className="absolute top-4 left-4 right-4 bottom-4 bg-gray-50 rounded-3xl border border-gray-200 shadow-sm -z-10 transform scale-95 opacity-50"></div>}
+                        <div className={cardClass}>
+                            <div className={`h-32 bg-gradient-to-br ${categoryData.color} p-6 flex flex-col justify-end text-white relative`}>
+                                <div className="absolute top-4 left-4 bg-black/20 backdrop-blur px-2 py-1 rounded text-[10px] font-mono">Match: {currentStudent.affinityScore}pt</div>
+                                <div className="font-bold text-sm opacity-90">{categoryData.group}</div>
+                                <div className="text-2xl font-black leading-none shadow-black/10 drop-shadow-md">{categoryData.name}</div>
+                            </div>
+                            <div className="flex-1 p-6 flex flex-col gap-4 overflow-y-auto pb-32">
+                                {currentStudent.theme && <div className="mb-2"><h4 className="text-sm font-bold text-gray-800 mb-2 flex items-center gap-2 border-b border-gray-100 pb-1"><Lightbulb size={16} className="text-yellow-500"/> 今考えている題材</h4><div className="bg-yellow-50/50 p-4 rounded-xl border border-yellow-100 font-bold text-gray-800 leading-snug shadow-sm">{currentStudent.theme}</div></div>}
+                                <div><h4 className="text-sm font-bold text-gray-800 mb-2 flex items-center gap-2 border-b border-gray-100 pb-1"><Sparkles size={16} className="text-purple-500"/> トピック</h4><div className="flex flex-wrap gap-2">{currentStudent.topics?.map(tid => <span key={tid} className="bg-blue-50 text-blue-700 px-2 py-1 rounded-lg text-xs font-bold border border-blue-100">{TOPIC_TAGS.find(t=>t.id===tid)?.name}</span>)}</div></div>
+                                <div><h4 className="text-sm font-bold text-gray-800 mb-2 flex items-center gap-2 border-b border-gray-100 pb-1"><Settings size={16} className="text-green-500"/> アプローチ</h4><div className="flex flex-wrap gap-2">{currentStudent.approaches?.map(aid => { const a = APPROACH_TAGS.find(t=>t.id===aid); return a ? <div key={aid} className="bg-green-50 text-green-700 px-2 py-1 rounded-lg text-xs font-bold border border-green-100 flex items-center gap-1"><span>{a.icon}</span><span>{a.name}</span></div> : null; })}</div></div>
+                                <div><h4 className="text-sm font-bold text-gray-800 mb-2 flex items-center gap-2 border-b border-gray-100 pb-1"><Zap size={16} className="text-orange-500"/> スキル</h4><div className="flex flex-wrap gap-2">{currentStudent.skills?.map(s => <span key={s} className="bg-purple-50 text-purple-700 px-2 py-1 rounded-lg text-xs font-bold border border-purple-100">{s}</span>)}</div></div>
+                                <div className="mt-2"><div className="text-sm font-bold text-gray-800 mb-2 flex items-center gap-2 border-b border-gray-100 pb-1"><Smile size={16} className="text-pink-500"/> ひとこと</div><div className="bg-gray-50 p-4 rounded-xl border border-gray-100 relative"><p className="text-sm text-gray-600 italic">"{currentStudent.comment}"</p></div></div>
+                            </div>
+                            <div className="absolute bottom-0 left-0 right-0 bg-white/95 backdrop-blur-sm border-t p-4 pb-6 flex gap-2 justify-center">
+                                <button onClick={() => toggleSelection('direction')} className={`flex-1 py-3 rounded-xl flex flex-col items-center transition border-2 ${selections.direction ? 'bg-green-50 border-green-500 text-green-700' : 'bg-gray-50 border-transparent text-gray-400 hover:bg-gray-100'}`}><CheckCircle size={20} className={selections.direction ? 'fill-current' : ''}/><span className="text-[10px] font-bold mt-1">方向性</span></button>
+                                <button onClick={() => toggleSelection('skill')} className={`flex-1 py-3 rounded-xl flex flex-col items-center transition border-2 ${selections.skill ? 'bg-blue-50 border-blue-500 text-blue-700' : 'bg-gray-50 border-transparent text-gray-400 hover:bg-gray-100'}`}><Zap size={20} className={selections.skill ? 'fill-current' : ''}/><span className="text-[10px] font-bold mt-1">スキル</span></button>
+                                <button onClick={() => toggleSelection('love')} className={`flex-1 py-3 rounded-xl flex flex-col items-center transition border-2 ${selections.love ? 'bg-pink-50 border-pink-500 text-pink-700' : 'bg-gray-50 border-transparent text-gray-400 hover:bg-gray-100'}`}><Heart size={20} className={selections.love ? 'fill-current' : ''}/><span className="text-[10px] font-bold mt-1">組みたい</span></button>
+                            </div>
+                        </div>
+                    </div>
+                    <div className="w-full max-w-md mt-6 flex items-center justify-between gap-6 px-4">
+                        <button onClick={() => handleSwipe('left')} className="w-16 h-16 rounded-full bg-white border-2 border-gray-200 text-gray-400 shadow-lg flex items-center justify-center hover:bg-red-50 hover:text-red-400 hover:border-red-200 hover:scale-110 transition-all active:scale-95"><X size={32} strokeWidth={3} /></button>
+                        <div className="flex-1"><button onClick={() => handleSwipe('right')} disabled={!hasSelection} className={`w-full py-4 rounded-2xl shadow-xl flex items-center justify-center gap-2 font-bold text-white transition-all active:scale-95 ${hasSelection ? 'bg-gradient-to-r from-blue-500 to-purple-600 hover:scale-[1.02] cursor-pointer' : 'bg-gray-300 cursor-not-allowed text-gray-100'}`}>{hasSelection ? <ThumbsUp size={20} /> : <Lock size={20} />}{hasSelection ? 'いいねを送る' : 'タグを選択してください'}</button></div>
+                    </div>
+                    <div className="text-xs text-gray-400 mt-4 font-mono">{currentIndex + 1} / {candidates.length} Cards</div>
+                </div>
+            );
+        };
+
+        const ModernResultView = ({ currentUser, students, groups, isPublished }) => {
+            if (!isPublished) return <div className="flex flex-col items-center justify-center min-h-[60vh] p-8 text-center"><h2 className="text-3xl font-black text-gray-800 mb-2">Analyzing...</h2><p className="text-gray-500">先生が最適なチームを構成中です。<br/>しばらくお待ちください。</p></div>;
+            const myGroupIndex = groups.findIndex(g => g.includes(currentUser.id));
+            const myGroupMembers = myGroupIndex !== -1 ? students.filter(s => groups[myGroupIndex].includes(s.id)) : [];
+            return (
+                <div className="min-h-screen bg-gradient-to-b from-blue-50 to-white p-6 pt-12">
+                    <div className="max-w-2xl mx-auto">
+                        <div className="text-center mb-10">
+                            <div className="inline-block bg-yellow-400 text-yellow-900 font-black text-xs px-3 py-1 rounded-full uppercase tracking-widest mb-4 shadow-lg transform -rotate-2">Team Matched!</div>
+                            {myGroupIndex !== -1 && <h1 className="text-5xl font-black text-blue-600 mb-2 tracking-tight drop-shadow-sm">TEAM {myGroupIndex + 1}</h1>}
+                            <h2 className="text-2xl font-bold text-gray-900 mb-2">あなたのチーム</h2>
+                        </div>
+                        <div className="grid gap-4">
+                            {myGroupMembers.map((member) => {
+                                const isMe = member.id === currentUser.id;
+                                const cat = CATEGORIES.find(c => c.id === member.category) || CATEGORIES[0];
+                                return (
+                                    <div key={member.id} className="bg-white rounded-2xl p-4 shadow-xl border border-gray-100 flex items-center gap-4 transform hover:scale-[1.02] transition duration-300">
+                                        <div className={`w-14 h-14 rounded-2xl bg-gradient-to-br ${cat.color} flex items-center justify-center text-white font-bold text-xl shadow-md`}>{member.name.charAt(0)}</div>
+                                        <div className="flex-1">
+                                            <div className="flex justify-between items-center mb-1"><h3 className="font-bold text-lg text-gray-800 flex items-center gap-2">{member.name}{isMe && <span className="bg-gray-900 text-white text-[10px] px-2 py-0.5 rounded-full">YOU</span>}</h3><div className="text-xs font-bold text-gray-400">{cat.name}</div></div>
+                                            <div className="flex gap-2 mb-1"><span className="bg-gray-50 text-gray-500 px-2 py-0.5 rounded text-[10px] font-bold">{member.classId}組 {member.studentNumber}番</span></div>
+                                            <div className="flex flex-wrap gap-1">{member.skills?.slice(0,3).map(s => <span key={s} className="bg-purple-50 text-purple-700 px-2 py-1 rounded-lg text-xs font-bold border border-purple-100">{s}</span>)}</div>
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        const App = () => {
+            const [user, setUser] = useState(null);
+            const [currentUserData, setCurrentUserData] = useState(null);
+            const [students, setStudents] = useState([]);
+            const [phase, setPhase] = useState(PHASE.INPUT);
+            const [groups, setGroups] = useState([]);
+            const [errorMsg, setErrorMsg] = useState('');
+
+            // 1. Auth Listener
+            useEffect(() => {
+                const unsubscribe = onAuthStateChanged(auth, async (u) => {
+                    if (u) {
+                        setUser(u);
+                        // Fetch user data from Firestore using email as ID
+                        const userDoc = await getDoc(doc(db, 'users', u.email));
+                        if (userDoc.exists()) {
+                            setCurrentUserData(userDoc.data());
+                        } else {
+                            setErrorMsg("このアカウントは登録されていません。管理者に問い合わせてください。");
+                            signOut(auth);
+                        }
+                    } else {
+                        setUser(null);
+                        setCurrentUserData(null);
+                    }
+                });
+                return () => unsubscribe();
+            }, []);
+
+            // 2. Realtime Data Listeners (Only when logged in)
+            useEffect(() => {
+                if (!user || !currentUserData) return;
+
+                // Listen to Phase
+                const unsubSystem = onSnapshot(doc(db, 'system', 'config'), (doc) => {
+                    if (doc.exists()) setPhase(doc.data().phase || PHASE.INPUT);
+                });
+
+                // Listen to Students (If teacher -> all, If student -> depends on phase?) 
+                // For simplicity, fetching all to calculate matches locally (ideal for client-side demo)
+                const unsubStudents = onSnapshot(collection(db, 'users'), (snapshot) => {
+                    const loadedStudents = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+                    setStudents(loadedStudents);
+                });
+
+                // Listen to Groups
+                const unsubGroups = onSnapshot(doc(db, 'system', 'groups'), (doc) => {
+                    if(doc.exists()) setGroups(doc.data().list || []);
+                });
+
+                return () => { unsubSystem(); unsubStudents(); unsubGroups(); };
+            }, [user, currentUserData]);
+
+            // Handlers
+            const handleLogin = async () => {
+                try {
+                    await signInWithPopup(auth, new GoogleAuthProvider());
+                    setErrorMsg('');
+                } catch (error) {
+                    console.error(error);
+                    setErrorMsg("ログインに失敗しました");
+                }
+            };
+
+            const handleLogout = () => signOut(auth);
+
+            const handleSaveProfile = async (data) => {
+                if(!user) return;
+                await updateDoc(doc(db, 'users', user.email), {
+                    ...data, // topics, approaches, skills, comment
+                    updatedAt: new Date()
+                });
+            };
+
+            const handleVote = async (targetId, selections) => {
+                if(!user) return;
+                // Update my votes in my document
+                // Using dot notation for nested update might require map, here just replacing vote object
+                // Safer: read first then update, or use set with merge
+                const userRef = doc(db, 'users', user.email);
+                const newData = { [`votes.${targetId}`]: selections };
+                // Firestore doesn't support dynamic key in update easily for nested map in this simple way without dot notation
+                // Let's assume we fetch full object in real app or use updateDoc with "votes.targetId" syntax
+                // Here simulating by updating the whole user object which is already in memory
+                // For this code to work simply:
+                const currentVotes = currentUserData.votes || {};
+                await updateDoc(userRef, { votes: { ...currentVotes, [targetId]: selections } });
+            };
+
+            // Teacher Handlers
+            const handleImportData = async (dataList) => {
+                const batch = writeBatch(db);
+                dataList.forEach(data => {
+                    const ref = doc(db, 'users', data.email); // Use email as ID
+                    batch.set(ref, data);
+                });
+                await batch.commit();
+                alert(`${dataList.length}件のデータを登録しました。`);
+            };
+
+            const handleMatching = async () => {
+                await updateDoc(doc(db, 'system', 'config'), { phase: PHASE.MATCHING });
+                // In real app, Cloud Function does this. Here client does it and saves result.
+                // We need all votes. 'students' state has them if we listen to 'users' collection.
+                // Re-construct votes map
+                const allVotes = {};
+                students.forEach(s => { if(s.votes) allVotes[s.id] = s.votes; });
+                const result = runWeightedMatchingAlgorithm(students, allVotes);
+                await setDoc(doc(db, 'system', 'groups'), { list: result });
+            };
+
+            const handlePublish = async () => {
+                await updateDoc(doc(db, 'system', 'config'), { phase: PHASE.PUBLISH });
+            };
+
+            const handleReset = async () => {
+                if(!confirm("本当にリセットしますか？全生徒の入力状態は維持されますが、フェーズはINPUTに戻ります。")) return;
+                await updateDoc(doc(db, 'system', 'config'), { phase: PHASE.INPUT });
+                await setDoc(doc(db, 'system', 'groups'), { list: [] });
+            };
+
+            // Export CSV
+            const handleExportCSV = () => {
+                const headers = ['Team ID', 'Class', 'Number', 'Name', 'Category', 'Theme', 'Topics'];
+                const rows = [];
+                groups.forEach((group, groupIdx) => {
+                    group.forEach(studentId => {
+                        const student = students.find(s => s.id === studentId);
+                        if (student) {
+                            const catName = CATEGORIES.find(c => c.id === student.category)?.name || '';
+                            const topicNames = (student.topics||[]).map(tid => TOPIC_TAGS.find(t => t.id === tid)?.name).join('|');
+                            rows.push([`TEAM ${groupIdx+1}`, student.classId, student.studentNumber, student.name, catName, `"${student.theme||''}"`, `"${topicNames}"`]);
+                        }
+                    });
+                });
+                const csvContent = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
+                const bom = new Uint8Array([0xEF, 0xBB, 0xBF]);
+                const blob = new Blob([bom, csvContent], { type: 'text/csv;charset=utf-8;' });
+                const url = URL.createObjectURL(blob);
+                const link = document.createElement('a');
+                link.href = url;
+                link.setAttribute('download', 'teams.csv');
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+            };
+
+            if (!user) return <LoginScreen onLogin={handleLogin} />;
+            if (errorMsg) return <div className="min-h-screen flex items-center justify-center p-4"><div className="bg-red-50 text-red-600 p-6 rounded-xl border border-red-200 text-center"><AlertCircle className="mx-auto mb-2"/>{errorMsg}</div></div>;
+            if (!currentUserData) return <div className="min-h-screen flex items-center justify-center">Loading...</div>;
+
+            const isTeacher = currentUserData.role === 'teacher' || currentUserData.role === 'admin';
+
+            return (
+                <div className="min-h-screen bg-gray-50 font-sans text-gray-800 selection:bg-blue-200">
+                    <header className="bg-white/80 backdrop-blur-md border-b border-gray-200 sticky top-0 z-50">
+                        <div className="max-w-4xl mx-auto px-4 h-16 flex justify-between items-center">
+                            <div className="flex items-center gap-2">
+                                <div className="bg-gradient-to-tr from-blue-500 to-purple-500 text-white p-2 rounded-xl shadow-lg"><Sparkles size={20} fill="white" /></div>
+                                <div><h1 className="font-bold text-gray-800 leading-tight">Team Match</h1></div>
+                            </div>
+                            <div className="flex items-center gap-3">
+                                <span className="text-xs font-bold px-3 py-1 bg-gray-100 rounded-full text-gray-600">{phase}</span>
+                                <button onClick={handleLogout} className="text-gray-400 hover:text-gray-600"><LogOut size={20}/></button>
+                            </div>
+                        </div>
+                    </header>
+                    
+                    {isTeacher && (
+                        <TeacherPanel 
+                            phase={phase} setPhase={null} students={students} studentCount={students.length}
+                            handleMatching={handleMatching} handlePublish={handlePublish} onExport={handleExportCSV}
+                            reset={handleReset} onImportData={handleImportData}
+                            isDemoMode={false} setIsDemoMode={()=>{}} onGenerateDemo={()=>{}} 
+                        />
+                    )}
+
+                    <main>
+                        {/* Only show Student UI if not teacher, or if teacher wants to see it? For now teacher sees panel + student view */}
+                        {!isTeacher && phase === PHASE.INPUT && <ModernInputForm currentUser={currentUserData} onSave={handleSaveProfile} />}
+                        {!isTeacher && phase === PHASE.CHECK && <CardStack currentUser={currentUserData} students={students} onVote={handleVote} />}
+                        {(phase === PHASE.MATCHING || phase === PHASE.PUBLISH) && <ModernResultView currentUser={currentUserData} students={students} groups={groups} isPublished={phase === PHASE.PUBLISH || isTeacher} />}
+                        
+                        {/* Teacher View of Teams (Always visible if teacher) */}
+                        {isTeacher && (phase === PHASE.MATCHING || phase === PHASE.PUBLISH) && (
+                            <div className="max-w-6xl mx-auto p-8">
+                                <h3 className="font-black text-2xl mb-6 text-gray-800">Generated Teams ({groups.length})</h3>
+                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                                    {groups.map((group, idx) => (
+                                        <div key={idx} className="bg-white rounded-2xl shadow-lg border border-gray-100 p-5">
+                                            <div className="flex justify-between items-center mb-4 pb-2 border-b border-gray-100"><h4 className="font-bold text-gray-700">TEAM {idx + 1}</h4><span className="bg-blue-100 text-blue-700 text-xs font-bold px-2 py-1 rounded-md">{group.length} Members</span></div>
+                                            <ul className="space-y-3">{group.map(sid => { const s = students.find(st => st.id === sid); const cat = CATEGORIES.find(c => c.id === s?.category) || CATEGORIES[0]; return (<li key={sid} className="flex items-center gap-3"><div className={`w-8 h-8 rounded-full bg-gradient-to-br ${cat?.color} flex items-center justify-center text-white text-xs font-bold`}>{s?.name.charAt(0)}</div><div><div className="font-bold text-sm text-gray-800">{s?.name}</div><div className="text-[10px] text-gray-400">{cat?.name}</div></div></li>)})}</ul>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+                    </main>
+                    <footer className="py-6 text-center text-gray-300 text-xs font-bold uppercase tracking-widest">Quest Learning Matcher v2.0</footer>
+                </div>
+            );
+        };
+
+        const root = createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
