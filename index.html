@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>K-MATCH</title>
+    <title>Quest Learning Matcher</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     
@@ -30,7 +30,7 @@
         import { createRoot } from 'react-dom/client';
         import { 
             Users, Layers, Settings, RefreshCw, Star, Heart, ArrowRight, 
-            CheckCircle, X, Zap, Award, Smile, Sparkles, ThumbsUp, Lock,
+            CheckCircle, X, Zap, Award, Smile, Sparkles, ThumbsUp, Lock, Unlock,
             Edit3, Lightbulb, Download, LogOut, Upload, Database, AlertCircle, Eye
         } from 'lucide-react';
         
@@ -119,14 +119,18 @@
         const STUDENT_NUMBERS = Array.from({ length: 40 }, (_, i) => i + 1);
         const PHASE = { INPUT: 'INPUT', CHECK: 'CHECK', MATCHING: 'MATCHING', PUBLISH: 'PUBLISH' };
 
+        // [MOCK DATABASE] Firebase未接続時のためのダミーデータ
+        const MOCK_MASTER_DATA = [
+            { id: 'student_001', email: 'student1@example.com', classId: 3, studentNumber: 15, name: '田中 陽翔', category: 'NAT_BIO', theme: '地元の河川における外来種が生態系に与える影響調査' }
+        ];
+
         // --- Logic: Matching ---
         const getRecommendedCandidates = (currentUser, allStudents) => {
             if (!currentUser || !allStudents) return [];
-            // Remove myself from candidates
             const candidates = allStudents.filter(s => s.id !== currentUser.id);
             const scoredCandidates = candidates.map(student => {
                 let score = 0;
-                if (student.category === currentUser.category) score += 3;
+                if (student.category && student.category === currentUser.category) score += 3;
                 const cTopics = student.topics || [];
                 const myTopics = currentUser.topics || [];
                 const commonTopics = cTopics.filter(t => myTopics.includes(t));
@@ -157,7 +161,6 @@
             const W_MUTUAL_LOVE=1000, W_ONE_WAY_LOVE=100, W_TAG_MATCH=5, W_CAT_MATCH=3;
             const scoreMatrix = {}; 
             
-            // NOTE: Teacher/Admin excluded in caller logic, but double check
             const targetStudents = students.filter(s => s.role !== 'teacher' && s.role !== 'admin');
 
             targetStudents.forEach(s1 => {
@@ -165,7 +168,7 @@
                 targetStudents.forEach(s2 => {
                     if (s1.id === s2.id) return;
                     let score = 0;
-                    if (s1.category === s2.category) score += W_CAT_MATCH;
+                    if (s1.category && s1.category === s2.category) score += W_CAT_MATCH;
                     const s1t = s1.topics || []; const s2t = s2.topics || [];
                     score += s1t.filter(t => s2t.includes(t)).length * W_TAG_MATCH;
                     const votes = s1.votes || {};
@@ -251,7 +254,7 @@
 
             const byCategory = {};
             remainingBuffer.forEach(pid => {
-                const cat = getCat(pid);
+                const cat = getCat(pid) || 'UNKNOWN';
                 if(!byCategory[cat]) byCategory[cat] = [];
                 byCategory[cat].push(pid);
             });
@@ -302,10 +305,10 @@
                             classId: parseInt(cols[1]),
                             studentNumber: parseInt(cols[2]),
                             name: cols[3],
-                            category: cols[4] || 'NAT_MAT',
-                            theme: cols[5] || '',
+                            category: cols[4] || '', // Allow empty
+                            theme: cols[5] || '', // Allow empty
                             role: cols[6] || 'student', 
-                            topics: [], approaches: [], skills: [], comment: '', votes: {}
+                            // Don't overwrite existing user data like topics/skills
                         });
                     }
                 });
@@ -323,7 +326,7 @@
                         value={text}
                         onChange={(e) => setText(e.target.value)}
                     />
-                    <button onClick={handleImport} className="bg-green-600 hover:bg-green-500 text-white px-4 py-2 rounded-lg text-xs font-bold w-full">登録を実行</button>
+                    <button onClick={handleImport} className="bg-green-600 hover:bg-green-500 text-white px-4 py-2 rounded-lg text-xs font-bold w-full">登録を実行 (上書き更新)</button>
                 </div>
             );
         };
@@ -391,13 +394,15 @@
 
         const ModernInputForm = ({ currentUser, onSave }) => {
             const [isSubmitted, setIsSubmitted] = useState(false);
-            const [formData, setFormData] = useState({ topics: [], approaches: [], skills: [], comment: '' });
+            const [formData, setFormData] = useState({ classId: 1, studentNumber: 1, name: '', category: '', theme: '', topics: [], approaches: [], skills: [], comment: '' });
+            
             useEffect(() => { 
                 if (currentUser) {
                     setFormData(prev => ({ ...prev, ...currentUser }));
                     if(currentUser.comment) setIsSubmitted(true);
                 } 
             }, [currentUser]);
+
             const handleSubmit = () => { onSave(formData); setIsSubmitted(true); };
             const toggleSelection = (field, value) => {
                 setFormData(prev => {
@@ -407,7 +412,11 @@
                     return { ...prev, [field]: [...current, value] };
                 });
             };
-            const currentCategory = CATEGORIES.find(c => c.id === currentUser.category) || CATEGORIES[0];
+
+            const currentCategory = CATEGORIES.find(c => c.id === formData.category) || { name: '未設定', group: '-', color: 'from-gray-400 to-gray-300' };
+            const isCategoryLocked = !!currentUser.category; // Locked if pre-set in DB
+            const isThemeLocked = !!currentUser.theme;
+
             const sectionTitleClass = "text-lg font-bold text-gray-800 mb-4 flex items-center gap-2 border-b-2 border-gray-100 pb-2";
 
             if (isSubmitted) {
@@ -428,13 +437,35 @@
                         <section className="bg-white p-6 rounded-3xl shadow-sm border border-gray-100 relative overflow-hidden">
                             <div className="absolute top-0 right-0 bg-gray-100 px-3 py-1 rounded-bl-xl text-xs text-gray-500 font-bold flex items-center gap-1"><Lock size={10} /> 固定情報</div>
                             <div className="flex gap-4 mb-4">
-                                <div className="w-1/3"><label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Class</label><div className="w-full p-3 bg-gray-100 rounded-xl font-bold text-gray-700">{currentUser.classId}組</div></div>
-                                <div className="w-1/3"><label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">No.</label><div className="w-full p-3 bg-gray-100 rounded-xl font-bold text-gray-700">{currentUser.studentNumber}番</div></div>
+                                <div className="w-1/3"><label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Class</label><div className="w-full p-3 bg-gray-100 rounded-xl font-bold text-gray-700">{formData.classId}組</div></div>
+                                <div className="w-1/3"><label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">No.</label><div className="w-full p-3 bg-gray-100 rounded-xl font-bold text-gray-700">{formData.studentNumber}番</div></div>
                             </div>
-                            <div className="mb-4"><label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Name</label><div className="w-full text-xl font-bold border-b-2 border-gray-200 py-1 bg-transparent text-gray-800">{currentUser.name}</div></div>
-                            <div className="mb-4"><label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Category</label><div className={`p-3 rounded-xl bg-gradient-to-r ${currentCategory.color} text-white shadow-sm`}><div className="text-[10px] opacity-80">{currentCategory.group}</div><div className="font-bold">{currentCategory.name}</div></div></div>
-                            <div><label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Research Theme</label><div className="w-full p-3 bg-gray-100 rounded-xl font-bold text-gray-700 text-sm leading-snug">{currentUser.theme || "(未設定)"}</div></div>
+                            <div className="mb-4"><label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Name</label><div className="w-full text-xl font-bold border-b-2 border-gray-200 py-1 bg-transparent text-gray-800">{formData.name}</div></div>
+                            
+                            {/* Category: Display Fixed or Select */}
+                            <div className="mb-4">
+                                <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-2 flex justify-between">Category {isCategoryLocked ? <Lock size={12}/> : <Unlock size={12} className="text-green-500"/>}</label>
+                                {isCategoryLocked ? (
+                                    <div className={`p-3 rounded-xl bg-gradient-to-r ${currentCategory.color} text-white shadow-sm`}><div className="text-[10px] opacity-80">{currentCategory.group}</div><div className="font-bold">{currentCategory.name}</div></div>
+                                ) : (
+                                    <select className="w-full p-3 bg-gray-50 rounded-xl font-bold text-gray-700 outline-none focus:ring-2 focus:ring-blue-500/50" value={formData.category} onChange={e => setFormData({...formData, category: e.target.value})}>
+                                        <option value="">カテゴリーを選択してください</option>
+                                        {CATEGORIES.map(c => (<option key={c.id} value={c.id}>{c.group} : {c.name}</option>))}
+                                    </select>
+                                )}
+                            </div>
+
+                            {/* Theme: Display Fixed or Input */}
+                            <div>
+                                <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-2 flex justify-between">Research Theme {isThemeLocked ? <Lock size={12}/> : <Unlock size={12} className="text-green-500"/>}</label>
+                                {isThemeLocked ? (
+                                    <div className="w-full p-3 bg-gray-100 rounded-xl font-bold text-gray-700 text-sm leading-snug">{formData.theme}</div>
+                                ) : (
+                                    <textarea className="w-full p-3 bg-gray-50 rounded-xl text-gray-700 outline-none focus:ring-2 focus:ring-blue-500/20 font-bold text-sm" rows="2" value={formData.theme} onChange={e => setFormData({...formData, theme: e.target.value})} placeholder="現在考えている探究のテーマを入力" />
+                                )}
+                            </div>
                         </section>
+                        
                         <section>
                             <label className={sectionTitleClass}><Sparkles size={20} className="text-purple-500"/> トピックカードを選択（最大5つ）<span className="ml-auto text-xs font-bold text-blue-500 bg-blue-50 px-2 py-1 rounded-full">{(formData.topics||[]).length}/5</span></label>
                             <div className="flex flex-wrap gap-2">{TOPIC_TAGS.map(t => (<button key={t.id} onClick={() => toggleSelection('topics', t.id)} className={`text-xs px-4 py-2 rounded-lg border font-bold transition-all duration-200 ${(formData.topics||[]).includes(t.id) ? 'bg-blue-600 border-blue-600 text-white shadow-md transform scale-105' : 'bg-white border-gray-200 text-gray-600 hover:border-blue-300 hover:bg-gray-50'}`}>{t.name}</button>))}</div>
@@ -461,11 +492,14 @@
             const [currentIndex, setCurrentIndex] = useState(0);
             const [direction, setDirection] = useState(null);
             const [selections, setSelections] = useState({ direction: false, skill: false, love: false });
+            
             const candidates = useMemo(() => getRecommendedCandidates(currentUser, students), [students.length, currentUser.id]);
             const currentStudent = candidates[currentIndex];
+            
             useEffect(() => { setSelections({ direction: false, skill: false, love: false }); }, [currentIndex]);
             const toggleSelection = (type) => setSelections(prev => ({ ...prev, [type]: !prev[type] }));
             const hasSelection = useMemo(() => Object.values(selections).some(v => v), [selections]);
+            
             const handleSwipe = (dir) => {
                 if (!currentStudent || direction || (dir === 'right' && !hasSelection)) return;
                 setDirection(dir);
@@ -555,6 +589,15 @@
             const [groups, setGroups] = useState([]);
             const [errorMsg, setErrorMsg] = useState('');
 
+            // Auto reload after 1 hour
+            useEffect(() => {
+                const timer = setTimeout(() => {
+                    console.log("Auto reloading...");
+                    window.location.reload();
+                }, 3600000); // 1 hour = 60 * 60 * 1000
+                return () => clearTimeout(timer);
+            }, []);
+
             useEffect(() => {
                 const unsubscribe = onAuthStateChanged(auth, async (u) => {
                     if (u) {
@@ -584,7 +627,7 @@
                 const unsubStudents = onSnapshot(collection(db, 'users'), (snapshot) => {
                     const loadedStudents = snapshot.docs
                         .map(d => ({ id: d.id, ...d.data() }))
-                        .filter(u => u.role !== 'teacher' && u.role !== 'admin'); // Admin Excluded from matching list
+                        .filter(u => u.role !== 'teacher' && u.role !== 'admin');
                     setStudents(loadedStudents);
                 });
 
@@ -603,6 +646,8 @@
                     console.error(error);
                     if (error.code === 'auth/unauthorized-domain') {
                         setErrorMsg(`【設定エラー】このドメイン (${window.location.hostname}) はFirebaseで許可されていません。Firebaseコンソールの Authentication > 設定 > 承認済みドメイン にこのドメインを追加してください。`);
+                    } else if (error.code === 'auth/api-key-not-valid' || error.message.includes('api-key-not-valid')) {
+                        setErrorMsg("【設定エラー】APIキーが正しくありません。index.html内の firebaseConfig を、Firebaseコンソールからコピーした本物の値に書き換えてください。");
                     } else if (error.code === 'auth/popup-closed-by-user') {
                         setErrorMsg("ログイン操作がキャンセルされました。");
                     } else {
@@ -615,7 +660,6 @@
 
             const handleSaveProfile = async (data) => {
                 if(!user) return;
-                // [GUARD] Teacher cannot save profile
                 if(currentUserData.role === 'teacher' || currentUserData.role === 'admin') {
                     alert("【確認】管理者のため、データは保存されません（プレビューモード）");
                     return;
@@ -625,7 +669,6 @@
 
             const handleVote = async (targetId, selections) => {
                 if(!user) return;
-                // [GUARD] Teacher cannot vote
                 if(currentUserData.role === 'teacher' || currentUserData.role === 'admin') {
                     console.log("Teacher vote ignored");
                     return;
@@ -639,10 +682,10 @@
                 const batch = writeBatch(db);
                 dataList.forEach(data => {
                     const ref = doc(db, 'users', data.email); 
-                    batch.set(ref, data);
+                    batch.set(ref, data, { merge: true }); 
                 });
                 await batch.commit();
-                alert(`${dataList.length}件のデータを登録しました。`);
+                alert(`${dataList.length}件のデータを登録しました。既存の生徒入力データは保持されます。`);
             };
 
             const handleMatching = async () => {
@@ -663,26 +706,82 @@
                 await setDoc(doc(db, 'system', 'groups'), { list: [] });
             };
 
+            // Export CSV
             const handleExportCSV = () => {
-                const headers = ['Team ID', 'Class', 'Number', 'Name', 'Category', 'Theme', 'Topics'];
-                const rows = [];
+                // Part 1: Student Data Headers
+                const studentHeaders = [
+                    'Team ID', 'Class', 'Number', 'Name', 'Email', 
+                    'Category', 'Theme', 'Topics', 'Approaches', 'Skills', 'Comment'
+                ];
+                
+                // Part 2: Team Data Headers (separated by spacers)
+                const teamHeaders = ['', '', 'Team ID (List)', 'Member Emails'];
+                
+                // Initialize containers
+                const studentRows = [];
+                const teamRows = [];
+
                 groups.forEach((group, groupIdx) => {
+                    const teamName = `TEAM ${groupIdx + 1}`;
+                    
+                    // -- Right Side: Team Email List --
+                    const teamEmails = group.map(sid => {
+                        const s = students.find(st => st.id === sid);
+                        return s ? s.email : '';
+                    }).filter(e => e).join(', ');
+                    
+                    // Add one row per team for the right side list
+                    teamRows.push([teamName, `"${teamEmails}"`]);
+
+                    // -- Left Side: Detailed Student List --
                     group.forEach(studentId => {
                         const student = students.find(s => s.id === studentId);
                         if (student) {
                             const catName = CATEGORIES.find(c => c.id === student.category)?.name || '';
                             const topicNames = (student.topics||[]).map(tid => TOPIC_TAGS.find(t => t.id === tid)?.name).join('|');
-                            rows.push([`TEAM ${groupIdx+1}`, student.classId, student.studentNumber, student.name, catName, `"${student.theme||''}"`, `"${topicNames}"`]);
+                            const approachNames = (student.approaches||[]).map(aid => APPROACH_TAGS.find(a => a.id === aid)?.name).join('|');
+                            const skillNames = (student.skills||[]).join('|');
+                            
+                            studentRows.push([
+                                teamName, 
+                                student.classId, 
+                                student.studentNumber, 
+                                student.name, 
+                                student.email, 
+                                catName, 
+                                `"${student.theme||''}"`, 
+                                `"${topicNames}"`,
+                                `"${approachNames}"`, 
+                                `"${skillNames}"`, 
+                                `"${student.comment||''}"`
+                            ]);
                         }
                     });
                 });
-                const csvContent = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
+
+                // Combine Left (Students) and Right (Teams) side by side
+                const maxRows = Math.max(studentRows.length, teamRows.length);
+                const combinedRows = [];
+                
+                // Add Header Row
+                combinedRows.push([...studentHeaders, ...teamHeaders].join(','));
+
+                for (let i = 0; i < maxRows; i++) {
+                    const left = studentRows[i] ? studentRows[i].join(',') : new Array(studentHeaders.length).fill('').join(',');
+                    // Add 2 empty columns padding then the team data
+                    const rightData = teamRows[i] ? teamRows[i].join(',') : ','; 
+                    const right = teamRows[i] ? `, ,${rightData}` : ', , ,'; 
+
+                    combinedRows.push(`${left}${right}`);
+                }
+
+                const csvContent = combinedRows.join('\n');
                 const bom = new Uint8Array([0xEF, 0xBB, 0xBF]);
                 const blob = new Blob([bom, csvContent], { type: 'text/csv;charset=utf-8;' });
                 const url = URL.createObjectURL(blob);
                 const link = document.createElement('a');
                 link.href = url;
-                link.setAttribute('download', 'teams.csv');
+                link.setAttribute('download', 'teams_and_emails.csv');
                 document.body.appendChild(link);
                 link.click();
                 document.body.removeChild(link);
@@ -718,17 +817,14 @@
                     )}
 
                     <main>
-                        {/* Student View (Also visible to teacher as PREVIEW) */}
                         {((!isTeacher) || (isTeacher && phase !== PHASE.MATCHING && phase !== PHASE.PUBLISH)) && (
                             <div className={isTeacher ? "border-4 border-green-500 rounded-xl m-4 relative overflow-hidden bg-gray-100" : ""}>
                                 {isTeacher && <div className="absolute top-0 left-0 bg-green-500 text-white px-3 py-1 text-xs font-bold rounded-br-xl z-50 flex items-center gap-1"><Eye size={12}/> 生徒画面プレビュー (操作無効)</div>}
-                                
                                 {phase === PHASE.INPUT && <ModernInputForm currentUser={currentUserData} onSave={handleSaveProfile} />}
                                 {phase === PHASE.CHECK && <CardStack currentUser={currentUserData} students={students} onVote={handleVote} />}
                             </div>
                         )}
 
-                        {/* Result View (Shared) */}
                         {(phase === PHASE.MATCHING || phase === PHASE.PUBLISH) && (
                             <div className={isTeacher ? "border-4 border-green-500 rounded-xl m-4 relative overflow-hidden" : ""}>
                                 {isTeacher && <div className="absolute top-0 left-0 bg-green-500 text-white px-3 py-1 text-xs font-bold rounded-br-xl z-50 flex items-center gap-1"><Eye size={12}/> 生徒画面プレビュー</div>}
@@ -736,7 +832,6 @@
                             </div>
                         )}
                         
-                        {/* Teacher View of All Teams */}
                         {isTeacher && (phase === PHASE.MATCHING || phase === PHASE.PUBLISH) && (
                             <div className="max-w-6xl mx-auto p-8 border-t border-gray-200 mt-8">
                                 <h3 className="font-black text-2xl mb-6 text-gray-800">全チーム一覧 (管理者用)</h3>
