@@ -31,7 +31,7 @@
         import { 
             Users, Layers, Settings, RefreshCw, Star, Heart, ArrowRight, 
             CheckCircle, X, Zap, Award, Smile, Sparkles, ThumbsUp, Lock,
-            Edit3, Lightbulb, Download, LogOut, Upload, Database, AlertCircle
+            Edit3, Lightbulb, Download, LogOut, Upload, Database, AlertCircle, Eye
         } from 'lucide-react';
         
         // --- Firebase Imports & Config ---
@@ -45,12 +45,12 @@
 
         // 【重要】ここにFirebaseコンソールからコピーした設定値を貼り付けてください
         const firebaseConfig = {
-            apiKey: "AIzaSyCGIKgIuSlee2SxUlNsatUH1l7C2BkH3hc",
-            authDomain: "k-mach.firebaseapp.com",
-            projectId: "k-mach",
-            storageBucket: "k-mach.firebasestorage.app",
-            messagingSenderId: "735279357382",
-            appId: "1:735279357382:web:8dcecd5d5f01c7337826c7"
+            apiKey: "DUMMY_API_KEY_CHANGE_THIS",
+            authDomain: "dummy-project.firebaseapp.com",
+            projectId: "dummy-project",
+            storageBucket: "dummy-project.appspot.com",
+            messagingSenderId: "00000000000",
+            appId: "1:00000000:web:abcdef12345"
         };
 
         // Initialize Firebase
@@ -114,11 +114,15 @@
         ];
 
         const SKILLS = ['データ分析', '統計処理', 'プログラミング', '英語文献読解', '実験手技', '工作・DIY', 'デザイン', '動画編集', 'リーダーシップ', 'プレゼン'];
+        const MOCK_THEMES = ["未利用魚を活用した新商品開発", "学校内のプラゴミ削減", "AI古文解読アプリ", "伝統工芸のリブランディング", "植物由来代替肉の研究", "避難経路シミュレーション"];
+        const CLASS_LIST = Array.from({ length: 9 }, (_, i) => i + 1);
+        const STUDENT_NUMBERS = Array.from({ length: 40 }, (_, i) => i + 1);
         const PHASE = { INPUT: 'INPUT', CHECK: 'CHECK', MATCHING: 'MATCHING', PUBLISH: 'PUBLISH' };
 
         // --- Logic: Matching ---
         const getRecommendedCandidates = (currentUser, allStudents) => {
             if (!currentUser || !allStudents) return [];
+            // Remove myself from candidates
             const candidates = allStudents.filter(s => s.id !== currentUser.id);
             const scoredCandidates = candidates.map(student => {
                 let score = 0;
@@ -153,9 +157,12 @@
             const W_MUTUAL_LOVE=1000, W_ONE_WAY_LOVE=100, W_TAG_MATCH=5, W_CAT_MATCH=3;
             const scoreMatrix = {}; 
             
-            students.forEach(s1 => {
+            // NOTE: Teacher/Admin excluded in caller logic, but double check
+            const targetStudents = students.filter(s => s.role !== 'teacher' && s.role !== 'admin');
+
+            targetStudents.forEach(s1 => {
                 scoreMatrix[s1.id] = {};
-                students.forEach(s2 => {
+                targetStudents.forEach(s2 => {
                     if (s1.id === s2.id) return;
                     let score = 0;
                     if (s1.category === s2.category) score += W_CAT_MATCH;
@@ -167,7 +174,7 @@
                 });
             });
 
-            const unassigned = new Set(students.map(s => s.id));
+            const unassigned = new Set(targetStudents.map(s => s.id));
             const groups = [];
             const MIN_SIZE = 3, MAX_SIZE = 5;
 
@@ -179,8 +186,8 @@
                     for (let j = i + 1; j < arr.length; j++) {
                         const id1 = arr[i], id2 = arr[j];
                         let pairScore = (scoreMatrix[id1][id2] || 0) + (scoreMatrix[id2][id1] || 0);
-                        const v1 = students.find(s=>s.id===id1)?.votes?.[id2] || {};
-                        const v2 = students.find(s=>s.id===id2)?.votes?.[id1] || {};
+                        const v1 = targetStudents.find(s=>s.id===id1)?.votes?.[id2] || {};
+                        const v2 = targetStudents.find(s=>s.id===id2)?.votes?.[id1] || {};
                         if (v1.love && v2.love) pairScore += W_MUTUAL_LOVE * 2;
                         if (pairScore > maxScore) { maxScore = pairScore; bestPair = [id1, id2]; }
                     }
@@ -200,7 +207,7 @@
                         let totalScore = 0;
                         group.forEach(mId => {
                             totalScore += (scoreMatrix[candId][mId] || 0) + (scoreMatrix[mId][candId] || 0);
-                            const v = students.find(s=>s.id===candId)?.votes?.[mId] || {};
+                            const v = targetStudents.find(s=>s.id===candId)?.votes?.[mId] || {};
                             if(v.love) totalScore += W_ONE_WAY_LOVE;
                         });
                         if (totalScore > maxCandScore) { maxCandScore = totalScore; bestCand = candId; }
@@ -229,7 +236,7 @@
             let finalGroups = [], bufferGroup = [];
             groups.forEach(g => { if (g.length < MIN_SIZE) bufferGroup.push(...g); else finalGroups.push(g); });
 
-            const getCat = (sid) => students.find(s => s.id === sid)?.category;
+            const getCat = (sid) => targetStudents.find(s => s.id === sid)?.category;
             const getGroupCat = (group) => group.length > 0 ? getCat(group[0]) : null;
 
             let remainingBuffer = [];
@@ -284,7 +291,6 @@
             const [text, setText] = useState('');
             
             const handleImport = () => {
-                // CSV Format: email,classId,studentNumber,name,category,theme,role
                 const rows = text.trim().split('\n');
                 const data = [];
                 rows.forEach(row => {
@@ -298,7 +304,7 @@
                             name: cols[3],
                             category: cols[4] || 'NAT_MAT',
                             theme: cols[5] || '',
-                            role: cols[6] || 'student', // default student
+                            role: cols[6] || 'student', 
                             topics: [], approaches: [], skills: [], comment: '', votes: {}
                         });
                     }
@@ -332,12 +338,8 @@
                     </div>
                     <h1 className="text-2xl font-black text-gray-800 mb-2">Quest Matcher</h1>
                     <p className="text-gray-500 mb-8">Googleアカウントでログインしてください。<br/>登録済みのユーザーのみ利用可能です。</p>
-                    <button 
-                        onClick={onLogin}
-                        className="w-full bg-white border border-gray-300 text-gray-700 font-bold py-3 rounded-xl flex items-center justify-center gap-3 hover:bg-gray-50 transition"
-                    >
-                        <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" className="w-5 h-5"/>
-                        Googleでログイン
+                    <button onClick={onLogin} className="w-full bg-white border border-gray-300 text-gray-700 font-bold py-3 rounded-xl flex items-center justify-center gap-3 hover:bg-gray-50 transition">
+                        <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" className="w-5 h-5"/> Googleでログイン
                     </button>
                 </div>
             </div>
@@ -381,7 +383,6 @@
                                 )}
                             </div>
                         </div>
-                        {/* Only show import tool in INPUT phase for setup */}
                         {phase === PHASE.INPUT && <DataImporter onImport={onImportData} />}
                     </div>
                 </div>
@@ -391,18 +392,13 @@
         const ModernInputForm = ({ currentUser, onSave }) => {
             const [isSubmitted, setIsSubmitted] = useState(false);
             const [formData, setFormData] = useState({ topics: [], approaches: [], skills: [], comment: '' });
-            
-            // Load initial data
             useEffect(() => { 
                 if (currentUser) {
                     setFormData(prev => ({ ...prev, ...currentUser }));
-                    // If comment is filled, assume submitted (simple logic)
                     if(currentUser.comment) setIsSubmitted(true);
                 } 
             }, [currentUser]);
-
             const handleSubmit = () => { onSave(formData); setIsSubmitted(true); };
-            
             const toggleSelection = (field, value) => {
                 setFormData(prev => {
                     const current = prev[field] || [];
@@ -411,7 +407,6 @@
                     return { ...prev, [field]: [...current, value] };
                 });
             };
-
             const currentCategory = CATEGORIES.find(c => c.id === currentUser.category) || CATEGORIES[0];
             const sectionTitleClass = "text-lg font-bold text-gray-800 mb-4 flex items-center gap-2 border-b-2 border-gray-100 pb-2";
 
@@ -466,14 +461,11 @@
             const [currentIndex, setCurrentIndex] = useState(0);
             const [direction, setDirection] = useState(null);
             const [selections, setSelections] = useState({ direction: false, skill: false, love: false });
-            
             const candidates = useMemo(() => getRecommendedCandidates(currentUser, students), [students.length, currentUser.id]);
             const currentStudent = candidates[currentIndex];
-            
             useEffect(() => { setSelections({ direction: false, skill: false, love: false }); }, [currentIndex]);
             const toggleSelection = (type) => setSelections(prev => ({ ...prev, [type]: !prev[type] }));
             const hasSelection = useMemo(() => Object.values(selections).some(v => v), [selections]);
-            
             const handleSwipe = (dir) => {
                 if (!currentStudent || direction || (dir === 'right' && !hasSelection)) return;
                 setDirection(dir);
@@ -494,6 +486,7 @@
                         {currentIndex + 1 < candidates.length && <div className="absolute top-4 left-4 right-4 bottom-4 bg-gray-50 rounded-3xl border border-gray-200 shadow-sm -z-10 transform scale-95 opacity-50"></div>}
                         <div className={cardClass}>
                             <div className={`h-32 bg-gradient-to-br ${categoryData.color} p-6 flex flex-col justify-end text-white relative`}>
+                                <div className="absolute top-4 right-4 bg-white/20 backdrop-blur px-3 py-1 rounded-full text-xs font-bold">ID: {currentStudent.id.slice(-4)}</div>
                                 <div className="absolute top-4 left-4 bg-black/20 backdrop-blur px-2 py-1 rounded text-[10px] font-mono">Match: {currentStudent.affinityScore}pt</div>
                                 <div className="font-bold text-sm opacity-90">{categoryData.group}</div>
                                 <div className="text-2xl font-black leading-none shadow-black/10 drop-shadow-md">{categoryData.name}</div>
@@ -562,12 +555,10 @@
             const [groups, setGroups] = useState([]);
             const [errorMsg, setErrorMsg] = useState('');
 
-            // 1. Auth Listener
             useEffect(() => {
                 const unsubscribe = onAuthStateChanged(auth, async (u) => {
                     if (u) {
                         setUser(u);
-                        // Fetch user data from Firestore using email as ID
                         const userDoc = await getDoc(doc(db, 'users', u.email));
                         if (userDoc.exists()) {
                             setCurrentUserData(userDoc.data());
@@ -583,23 +574,20 @@
                 return () => unsubscribe();
             }, []);
 
-            // 2. Realtime Data Listeners (Only when logged in)
             useEffect(() => {
                 if (!user || !currentUserData) return;
 
-                // Listen to Phase
                 const unsubSystem = onSnapshot(doc(db, 'system', 'config'), (doc) => {
                     if (doc.exists()) setPhase(doc.data().phase || PHASE.INPUT);
                 });
 
-                // Listen to Students (If teacher -> all, If student -> depends on phase?) 
-                // For simplicity, fetching all to calculate matches locally (ideal for client-side demo)
                 const unsubStudents = onSnapshot(collection(db, 'users'), (snapshot) => {
-                    const loadedStudents = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+                    const loadedStudents = snapshot.docs
+                        .map(d => ({ id: d.id, ...d.data() }))
+                        .filter(u => u.role !== 'teacher' && u.role !== 'admin'); // Admin Excluded from matching list
                     setStudents(loadedStudents);
                 });
 
-                // Listen to Groups
                 const unsubGroups = onSnapshot(doc(db, 'system', 'groups'), (doc) => {
                     if(doc.exists()) setGroups(doc.data().list || []);
                 });
@@ -607,14 +595,19 @@
                 return () => { unsubSystem(); unsubStudents(); unsubGroups(); };
             }, [user, currentUserData]);
 
-            // Handlers
             const handleLogin = async () => {
                 try {
                     await signInWithPopup(auth, new GoogleAuthProvider());
                     setErrorMsg('');
                 } catch (error) {
                     console.error(error);
-                    setErrorMsg("ログインに失敗しました");
+                    if (error.code === 'auth/unauthorized-domain') {
+                        setErrorMsg(`【設定エラー】このドメイン (${window.location.hostname}) はFirebaseで許可されていません。Firebaseコンソールの Authentication > 設定 > 承認済みドメイン にこのドメインを追加してください。`);
+                    } else if (error.code === 'auth/popup-closed-by-user') {
+                        setErrorMsg("ログイン操作がキャンセルされました。");
+                    } else {
+                        setErrorMsg("ログインに失敗しました: " + error.message);
+                    }
                 }
             };
 
@@ -622,32 +615,30 @@
 
             const handleSaveProfile = async (data) => {
                 if(!user) return;
-                await updateDoc(doc(db, 'users', user.email), {
-                    ...data, // topics, approaches, skills, comment
-                    updatedAt: new Date()
-                });
+                // [GUARD] Teacher cannot save profile
+                if(currentUserData.role === 'teacher' || currentUserData.role === 'admin') {
+                    alert("【確認】管理者のため、データは保存されません（プレビューモード）");
+                    return;
+                }
+                await updateDoc(doc(db, 'users', user.email), { ...data, updatedAt: new Date() });
             };
 
             const handleVote = async (targetId, selections) => {
                 if(!user) return;
-                // Update my votes in my document
-                // Using dot notation for nested update might require map, here just replacing vote object
-                // Safer: read first then update, or use set with merge
+                // [GUARD] Teacher cannot vote
+                if(currentUserData.role === 'teacher' || currentUserData.role === 'admin') {
+                    console.log("Teacher vote ignored");
+                    return;
+                }
                 const userRef = doc(db, 'users', user.email);
-                const newData = { [`votes.${targetId}`]: selections };
-                // Firestore doesn't support dynamic key in update easily for nested map in this simple way without dot notation
-                // Let's assume we fetch full object in real app or use updateDoc with "votes.targetId" syntax
-                // Here simulating by updating the whole user object which is already in memory
-                // For this code to work simply:
                 const currentVotes = currentUserData.votes || {};
                 await updateDoc(userRef, { votes: { ...currentVotes, [targetId]: selections } });
             };
 
-            // Teacher Handlers
             const handleImportData = async (dataList) => {
                 const batch = writeBatch(db);
                 dataList.forEach(data => {
-                    const ref = doc(db, 'users', data.email); // Use email as ID
+                    const ref = doc(db, 'users', data.email); 
                     batch.set(ref, data);
                 });
                 await batch.commit();
@@ -656,9 +647,6 @@
 
             const handleMatching = async () => {
                 await updateDoc(doc(db, 'system', 'config'), { phase: PHASE.MATCHING });
-                // In real app, Cloud Function does this. Here client does it and saves result.
-                // We need all votes. 'students' state has them if we listen to 'users' collection.
-                // Re-construct votes map
                 const allVotes = {};
                 students.forEach(s => { if(s.votes) allVotes[s.id] = s.votes; });
                 const result = runWeightedMatchingAlgorithm(students, allVotes);
@@ -670,12 +658,11 @@
             };
 
             const handleReset = async () => {
-                if(!confirm("本当にリセットしますか？全生徒の入力状態は維持されますが、フェーズはINPUTに戻ります。")) return;
+                if(!confirm("本当にリセットしますか？")) return;
                 await updateDoc(doc(db, 'system', 'config'), { phase: PHASE.INPUT });
                 await setDoc(doc(db, 'system', 'groups'), { list: [] });
             };
 
-            // Export CSV
             const handleExportCSV = () => {
                 const headers = ['Team ID', 'Class', 'Number', 'Name', 'Category', 'Theme', 'Topics'];
                 const rows = [];
@@ -727,20 +714,32 @@
                             phase={phase} setPhase={null} students={students} studentCount={students.length}
                             handleMatching={handleMatching} handlePublish={handlePublish} onExport={handleExportCSV}
                             reset={handleReset} onImportData={handleImportData}
-                            isDemoMode={false} setIsDemoMode={()=>{}} onGenerateDemo={()=>{}} 
                         />
                     )}
 
                     <main>
-                        {/* Only show Student UI if not teacher, or if teacher wants to see it? For now teacher sees panel + student view */}
-                        {!isTeacher && phase === PHASE.INPUT && <ModernInputForm currentUser={currentUserData} onSave={handleSaveProfile} />}
-                        {!isTeacher && phase === PHASE.CHECK && <CardStack currentUser={currentUserData} students={students} onVote={handleVote} />}
-                        {(phase === PHASE.MATCHING || phase === PHASE.PUBLISH) && <ModernResultView currentUser={currentUserData} students={students} groups={groups} isPublished={phase === PHASE.PUBLISH || isTeacher} />}
+                        {/* Student View (Also visible to teacher as PREVIEW) */}
+                        {((!isTeacher) || (isTeacher && phase !== PHASE.MATCHING && phase !== PHASE.PUBLISH)) && (
+                            <div className={isTeacher ? "border-4 border-green-500 rounded-xl m-4 relative overflow-hidden bg-gray-100" : ""}>
+                                {isTeacher && <div className="absolute top-0 left-0 bg-green-500 text-white px-3 py-1 text-xs font-bold rounded-br-xl z-50 flex items-center gap-1"><Eye size={12}/> 生徒画面プレビュー (操作無効)</div>}
+                                
+                                {phase === PHASE.INPUT && <ModernInputForm currentUser={currentUserData} onSave={handleSaveProfile} />}
+                                {phase === PHASE.CHECK && <CardStack currentUser={currentUserData} students={students} onVote={handleVote} />}
+                            </div>
+                        )}
+
+                        {/* Result View (Shared) */}
+                        {(phase === PHASE.MATCHING || phase === PHASE.PUBLISH) && (
+                            <div className={isTeacher ? "border-4 border-green-500 rounded-xl m-4 relative overflow-hidden" : ""}>
+                                {isTeacher && <div className="absolute top-0 left-0 bg-green-500 text-white px-3 py-1 text-xs font-bold rounded-br-xl z-50 flex items-center gap-1"><Eye size={12}/> 生徒画面プレビュー</div>}
+                                <ModernResultView currentUser={currentUserData} students={students} groups={groups} isPublished={phase === PHASE.PUBLISH || isTeacher} />
+                            </div>
+                        )}
                         
-                        {/* Teacher View of Teams (Always visible if teacher) */}
+                        {/* Teacher View of All Teams */}
                         {isTeacher && (phase === PHASE.MATCHING || phase === PHASE.PUBLISH) && (
-                            <div className="max-w-6xl mx-auto p-8">
-                                <h3 className="font-black text-2xl mb-6 text-gray-800">Generated Teams ({groups.length})</h3>
+                            <div className="max-w-6xl mx-auto p-8 border-t border-gray-200 mt-8">
+                                <h3 className="font-black text-2xl mb-6 text-gray-800">全チーム一覧 (管理者用)</h3>
                                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                                     {groups.map((group, idx) => (
                                         <div key={idx} className="bg-white rounded-2xl shadow-lg border border-gray-100 p-5">
