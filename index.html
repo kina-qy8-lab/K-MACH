@@ -699,7 +699,12 @@
             const handleSwipe = (dir) => {
                 if (!currentStudent || direction || (dir === 'right' && !hasSelection)) return;
                 setDirection(dir);
-                if (dir === 'right') onVote(currentStudent.id, selections);
+                
+                // [FIX] Always record vote (even skip) to progress status
+                // Also ensure we are recording a valid vote object
+                const voteData = dir === 'right' ? selections : { skipped: true };
+                onVote(currentStudent.id, voteData);
+                
                 setTimeout(() => { setDirection(null); setCurrentIndex(prev => prev + 1); }, 400);
             };
             if (currentIndex >= candidates.length) return <div className="flex flex-col items-center justify-center h-[70vh] text-center p-6"><div className="bg-green-100 p-6 rounded-full mb-6 animate-bounce"><CheckCircle size={64} className="text-green-600" /></div><h2 className="text-2xl font-bold text-gray-800 mb-2">チェック完了！</h2><p className="text-gray-500">先生のマッチング開始をお待ちください。</p></div>;
@@ -726,15 +731,13 @@
                                 <div className="mt-2"><div className="text-sm font-bold text-gray-800 mb-2 flex items-center gap-2 border-b border-gray-100 pb-1"><Smile size={16} className="text-pink-500"/> ひとこと</div><div className="bg-gray-50 p-4 rounded-xl border border-gray-100 relative"><p className="text-sm text-gray-600 italic">"{currentStudent.comment}"</p></div></div>
                             </div>
                             <div className="absolute bottom-0 left-0 right-0 bg-white/95 backdrop-blur-sm border-t p-4 pb-6 flex gap-2 justify-center">
+                                <button onClick={() => handleSwipe('left')} className={`flex-1 py-3 rounded-xl flex flex-col items-center transition border-2 border-gray-200 text-gray-400 hover:bg-red-50 hover:text-red-500 hover:border-red-200`}><X size={20} /><span className="text-[10px] font-bold mt-1">スキップ</span></button>
                                 <button onClick={() => toggleSelection('direction')} className={`flex-1 py-3 rounded-xl flex flex-col items-center transition border-2 ${selections.direction ? 'bg-green-50 border-green-500 text-green-700' : 'bg-gray-50 border-transparent text-gray-400 hover:bg-gray-100'}`}><CheckCircle size={20} className={selections.direction ? 'fill-current' : ''}/><span className="text-[10px] font-bold mt-1">方向性</span></button>
                                 <button onClick={() => toggleSelection('skill')} className={`flex-1 py-3 rounded-xl flex flex-col items-center transition border-2 ${selections.skill ? 'bg-blue-50 border-blue-500 text-blue-700' : 'bg-gray-50 border-transparent text-gray-400 hover:bg-gray-100'}`}><Zap size={20} className={selections.skill ? 'fill-current' : ''}/><span className="text-[10px] font-bold mt-1">スキル</span></button>
                                 <button onClick={() => toggleSelection('love')} className={`flex-1 py-3 rounded-xl flex flex-col items-center transition border-2 ${selections.love ? 'bg-pink-50 border-pink-500 text-pink-700' : 'bg-gray-50 border-transparent text-gray-400 hover:bg-gray-100'}`}><Heart size={20} className={selections.love ? 'fill-current' : ''}/><span className="text-[10px] font-bold mt-1">組みたい</span></button>
+                                <button onClick={() => handleSwipe('right')} disabled={!hasSelection} className={`flex-1 py-3 rounded-xl flex flex-col items-center transition border-2 ${hasSelection ? 'bg-blue-600 text-white border-blue-600' : 'bg-gray-200 text-gray-400 border-gray-200'}`}><ThumbsUp size={20} /><span className="text-[10px] font-bold mt-1">送信</span></button>
                             </div>
                         </div>
-                    </div>
-                    <div className="w-full max-w-md mt-6 flex items-center justify-between gap-6 px-4">
-                        <button onClick={() => handleSwipe('left')} className="w-16 h-16 rounded-full bg-white border-2 border-gray-200 text-gray-400 shadow-lg flex items-center justify-center hover:bg-red-50 hover:text-red-400 hover:border-red-200 hover:scale-110 transition-all active:scale-95"><X size={32} strokeWidth={3} /></button>
-                        <div className="flex-1"><button onClick={() => handleSwipe('right')} disabled={!hasSelection} className={`w-full py-4 rounded-2xl shadow-xl flex items-center justify-center gap-2 font-bold text-white transition-all active:scale-95 ${hasSelection ? 'bg-gradient-to-r from-blue-500 to-purple-600 hover:scale-[1.02] cursor-pointer' : 'bg-gray-300 cursor-not-allowed text-gray-100'}`}>{hasSelection ? <ThumbsUp size={20} /> : <Lock size={20} />}{hasSelection ? 'いいねを送る' : 'タグを選択してください'}</button></div>
                     </div>
                     <div className="text-xs text-gray-400 mt-4 font-mono">{currentIndex + 1} / {candidates.length} Cards</div>
                 </div>
@@ -857,27 +860,35 @@
                 return () => clearTimeout(timer);
             }, []);
 
+            // 1. Auth Listener
             useEffect(() => {
-                const unsubscribe = onAuthStateChanged(auth, async (u) => {
-                    if (u) {
-                        setUser(u);
-                        const userDoc = await getDoc(doc(db, 'users', u.email));
-                        if (userDoc.exists()) {
-                            setCurrentUserData(userDoc.data());
-                        } else {
-                            setErrorMsg("このアカウントは登録されていません。管理者に問い合わせてください。");
-                            signOut(auth);
-                        }
-                    } else {
-                        setUser(null);
-                        setCurrentUserData(null);
-                    }
+                const unsubscribe = onAuthStateChanged(auth, (u) => {
+                    setUser(u);
                 });
                 return () => unsubscribe();
             }, []);
 
+            // 2. User Data Listener
             useEffect(() => {
-                if (!user || !currentUserData) return;
+                if (!user) {
+                    setCurrentUserData(null);
+                    return;
+                }
+                const unsubUser = onSnapshot(doc(db, 'users', user.email), (docSnap) => {
+                    if (docSnap.exists()) {
+                        setCurrentUserData(docSnap.data());
+                    } else {
+                        setErrorMsg("このアカウントは登録されていません。管理者に問い合わせてください。");
+                        signOut(auth);
+                    }
+                }, (error) => {
+                     console.error("User listener error:", error);
+                });
+                return () => unsubUser();
+            }, [user]);
+
+            useEffect(() => {
+                if (!user) return;
                 const unsubSystem = onSnapshot(doc(db, 'system', 'config'), (doc) => {
                     if (doc.exists()) setPhase(doc.data().phase || PHASE.INPUT);
                 });
@@ -895,7 +906,7 @@
                     }
                 });
                 return () => { unsubSystem(); unsubStudents(); unsubGroups(); };
-            }, [user, currentUserData]);
+            }, [user]);
 
             const handleLogin = async () => {
                 try {
@@ -915,13 +926,17 @@
                 if(currentUserData.role === 'teacher' || currentUserData.role === 'admin') { alert("【確認】管理者のため、データは保存されません（プレビューモード）"); return; }
                 await updateDoc(doc(db, 'users', user.email), { ...data, updatedAt: new Date() });
             };
+            
+            // [FIX] Correct Vote Handling: Use setDoc with merge to avoid overwriting entire map
             const handleVote = async (targetId, selections) => {
                 if(!user) return;
                 if(currentUserData.role === 'teacher' || currentUserData.role === 'admin') { console.log("Teacher vote ignored"); return; }
+                
                 const userRef = doc(db, 'users', user.email);
-                const currentVotes = currentUserData.votes || {};
-                await updateDoc(userRef, { votes: { ...currentVotes, [targetId]: selections } });
+                // Dynamically update the specific key in the 'votes' map
+                await setDoc(userRef, { votes: { [targetId]: selections } }, { merge: true });
             };
+
             const handleGenerateMock = () => {
                 const mocks = generateMockStudents(50);
                 const batch = writeBatch(db);
