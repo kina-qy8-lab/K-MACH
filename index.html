@@ -31,7 +31,7 @@
         import { 
             Users, Layers, Settings, RefreshCw, Star, Heart, ArrowRight, ArrowLeft,
             CheckCircle, X, Zap, Award, Smile, Sparkles, ThumbsUp, Lock, Unlock,
-            Edit3, Lightbulb, Download, LogOut, Upload, Database, AlertCircle, Eye, Trash2, ToggleLeft, ToggleRight
+            Edit3, Lightbulb, Download, LogOut, Upload, Database, AlertCircle, Eye, Trash2, ToggleLeft, ToggleRight, BarChart2
         } from 'lucide-react';
         
         // --- Firebase Imports & Config ---
@@ -158,6 +158,62 @@
             return isSelected 
                 ? 'bg-rose-500 border-rose-500 text-white' 
                 : 'bg-rose-50 border-rose-300 text-rose-800 hover:bg-rose-100';
+        };
+
+        // --- Logic: Metrics Calculation [NEW] ---
+        const calculateTeamMetrics = (groupMembers) => {
+            if (!groupMembers || groupMembers.length < 2) return { score: 0, connection: 0, interest: 0, diversity: 0, mutualPairs: 0 };
+
+            let connectionScore = 0;
+            let mutualPairs = 0;
+            let interestScore = 0;
+            
+            // Analyze pairs
+            for (let i = 0; i < groupMembers.length; i++) {
+                for (let j = i + 1; j < groupMembers.length; j++) {
+                    const s1 = groupMembers[i];
+                    const s2 = groupMembers[j];
+                    
+                    const v1to2 = s1.votes?.[s2.id]?.love;
+                    const v2to1 = s2.votes?.[s1.id]?.love;
+
+                    if (v1to2 && v2to1) {
+                        connectionScore += 15; // Mutual Love
+                        mutualPairs++;
+                    } else if (v1to2 || v2to1) {
+                        connectionScore += 5; // One-way Love
+                    }
+
+                    // Interest (Category match)
+                    if (s1.category && s1.category === s2.category) {
+                        interestScore += 5;
+                    }
+                    // Interest (Topic match)
+                    const s1Topics = s1.topics || [];
+                    const s2Topics = s2.topics || [];
+                    const commonTopics = s1Topics.filter(t => s2Topics.includes(t));
+                    interestScore += commonTopics.length * 2;
+                }
+            }
+
+            // Diversity (Unique Skills count)
+            const allSkills = new Set();
+            groupMembers.forEach(s => (s.skills || []).forEach(sk => allSkills.add(sk)));
+            const diversityScore = allSkills.size * 3;
+
+            // Total Score Normalize (Rough calculation for display)
+            // Base 50 points, add bonuses
+            let total = 50 + connectionScore + interestScore + diversityScore;
+            if (total > 100) total = 100;
+
+            return {
+                score: Math.min(100, Math.round(total)),
+                connection: connectionScore,
+                interest: interestScore,
+                diversity: diversityScore,
+                mutualPairs,
+                uniqueSkillsCount: allSkills.size
+            };
         };
 
         // --- Logic: Matching (Strict 3-5 Members + Skill Diversity) ---
@@ -748,8 +804,11 @@
             const [selectedMember, setSelectedMember] = useState(null);
 
             if (!isPublished) return <div className="flex flex-col items-center justify-center min-h-[60vh] p-8 text-center"><h2 className="text-3xl font-black text-gray-800 mb-2">Analyzing...</h2><p className="text-gray-500">先生が最適なチームを構成中です。<br/>しばらくお待ちください。</p></div>;
-            const myGroupIndex = groups.findIndex(g => g.includes(currentUser.id));
-            const myGroupMembers = myGroupIndex !== -1 ? students.filter(s => groups[myGroupIndex].includes(s.id)) : [];
+            const myGroupIndex = groups.findIndex(g => g.members ? g.members.includes(currentUser.id) : g.includes(currentUser.id));
+            const myGroupData = groups[myGroupIndex];
+            // Fix for object/array structure difference
+            const myGroupMemberIds = myGroupData ? (myGroupData.members || myGroupData) : [];
+            const myGroupMembers = myGroupMemberIds.map(id => students.find(s => s.id === id)).filter(Boolean);
             
             return (
                 <div className="min-h-screen bg-gradient-to-b from-blue-50 to-white p-6 pt-12 relative">
@@ -969,7 +1028,11 @@
                 const allVotes = {};
                 students.forEach(s => { if(s.votes) allVotes[s.id] = s.votes; });
                 const result = runWeightedMatchingAlgorithm(students, allVotes);
-                const firestoreData = result.map(group => ({ members: group }));
+                const firestoreData = result.map(group => {
+                    const members = group;
+                    const metrics = calculateTeamMetrics(members.map(mid => students.find(s => s.id === mid)).filter(Boolean));
+                    return { members, metrics };
+                });
                 await setDoc(doc(db, 'system', 'groups'), { list: firestoreData });
             };
             const handlePublish = async () => { await updateDoc(doc(db, 'system', 'config'), { phase: PHASE.PUBLISH }); };
@@ -981,16 +1044,28 @@
 
             const handleExportCSV = () => {
                 const studentHeaders = ['Team ID', 'Class', 'Number', 'Name', 'Email', 'Category', 'Theme', 'Topics', 'Approaches', 'Skills', 'Comment'];
-                const teamHeaders = ['', '', 'Team ID (List)', 'Member Emails'];
+                const teamHeaders = ['', '', 'Team ID (List)', 'Member Emails', 'Team Score', 'Mutual Pairs', 'Connection Score', 'Interest Score', 'Diversity Score'];
                 const studentRows = [];
                 const teamRows = [];
 
-                groups.forEach((group, groupIdx) => {
+                groups.forEach((groupData, groupIdx) => {
                     const teamName = `TEAM ${groupIdx + 1}`;
-                    const teamEmails = group.map(sid => { const s = students.find(st => st.id === sid); return s ? s.email : ''; }).filter(e => e).join(', ');
-                    teamRows.push([teamName, `"${teamEmails}"`]);
+                    const groupMembers = groupData.members || groupData;
+                    const metrics = groupData.metrics || {};
+                    
+                    const teamEmails = groupMembers.map(sid => { const s = students.find(st => st.id === sid); return s ? s.email : ''; }).filter(e => e).join(', ');
+                    
+                    teamRows.push([
+                        teamName, 
+                        `"${teamEmails}"`, 
+                        metrics.score || 0,
+                        metrics.mutualPairs || 0,
+                        metrics.connection || 0,
+                        metrics.interest || 0,
+                        metrics.diversity || 0
+                    ]);
 
-                    group.forEach(studentId => {
+                    groupMembers.forEach(studentId => {
                         const student = students.find(s => s.id === studentId);
                         if (student) {
                             const catName = CATEGORIES.find(c => c.id === student.category)?.name || '';
@@ -1009,7 +1084,7 @@
                 for (let i = 0; i < maxRows; i++) {
                     const left = studentRows[i] ? studentRows[i].join(',') : new Array(studentHeaders.length).fill('').join(',');
                     const rightData = teamRows[i] ? teamRows[i].join(',') : ','; 
-                    const right = teamRows[i] ? `, ,${rightData}` : ', , ,'; 
+                    const right = teamRows[i] ? `, ,${rightData}` : ', , , , , , ,'; 
                     combinedRows.push(`${left}${right}`);
                 }
 
@@ -1057,7 +1132,6 @@
                                 {phase === PHASE.CHECK && <CardStack currentUser={currentUserData} students={students} onVote={handleVote} />}
                             </div>
                         )}
-                        
                         {/* [MODIFIED] Hide preview for teacher completely during MATCHING and PUBLISH phases */}
                         {!isTeacher && (phase === PHASE.MATCHING || phase === PHASE.PUBLISH) && (
                             <div>
@@ -1069,12 +1143,31 @@
                             <div className="max-w-6xl mx-auto p-8 border-t border-gray-200 mt-8">
                                 <h3 className="font-black text-2xl mb-6 text-gray-800">全チーム一覧 (管理者用)</h3>
                                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                                    {groups.map((group, idx) => (
-                                        <div key={idx} className="bg-white rounded-2xl shadow-lg border border-gray-100 p-5">
-                                            <div className="flex justify-between items-center mb-4 pb-2 border-b border-gray-100"><h4 className="font-bold text-gray-700">TEAM {idx + 1}</h4><span className="bg-blue-100 text-blue-700 text-xs font-bold px-2 py-1 rounded-md">{group.length} Members</span></div>
+                                    {groups.map((groupData, idx) => {
+                                        const group = groupData.members || groupData;
+                                        const metrics = groupData.metrics || {};
+                                        return (
+                                        <div key={idx} className="bg-white rounded-2xl shadow-lg border border-gray-100 p-5 relative overflow-hidden">
+                                            {/* Score Badge */}
+                                            <div className="absolute top-0 right-0 bg-gray-100 px-3 py-1 rounded-bl-xl text-xs font-bold text-gray-500 flex items-center gap-2">
+                                                <span>Score: {metrics.score}</span>
+                                                {metrics.mutualPairs > 0 && <span className="text-pink-500 flex items-center gap-0.5"><Heart size={10} fill="currentColor"/>{metrics.mutualPairs}</span>}
+                                            </div>
+                                            
+                                            <div className="flex justify-between items-center mb-4 pb-2 border-b border-gray-100">
+                                                <h4 className="font-bold text-gray-700">TEAM {idx + 1}</h4>
+                                                <span className="bg-blue-100 text-blue-700 text-xs font-bold px-2 py-1 rounded-md">{group.length} Members</span>
+                                            </div>
                                             <ul className="space-y-3">{group.map(sid => { const s = students.find(st => st.id === sid); const cat = CATEGORIES.find(c => c.id === s?.category) || CATEGORIES[0]; return (<li key={sid} className="flex items-center gap-3"><div className={`w-8 h-8 rounded-full bg-gradient-to-br ${cat?.color} flex items-center justify-center text-white text-xs font-bold`}>{s?.name.charAt(0)}</div><div><div className="font-bold text-sm text-gray-800">{s?.name}</div><div className="text-[10px] text-gray-400">{cat?.name}</div></div></li>)})}</ul>
+                                            
+                                            {/* Metrics Detail */}
+                                            <div className="mt-4 pt-3 border-t border-gray-50 flex justify-between text-[10px] text-gray-400">
+                                                <div title="結束力">Con: {metrics.connection}</div>
+                                                <div title="共通関心">Int: {metrics.interest}</div>
+                                                <div title="多様性">Div: {metrics.diversity}</div>
+                                            </div>
                                         </div>
-                                    ))}
+                                    )})} 
                                 </div>
                             </div>
                         )}
