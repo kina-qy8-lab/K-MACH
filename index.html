@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Quest Learning Matcher</title>
+    <title>K-MATCH</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     
@@ -29,7 +29,7 @@
         import React, { useState, useEffect, useMemo } from 'react';
         import { createRoot } from 'react-dom/client';
         import { 
-            Users, Layers, Settings, RefreshCw, Star, Heart, ArrowRight, 
+            Users, Layers, Settings, RefreshCw, Star, Heart, ArrowRight, ArrowLeft,
             CheckCircle, X, Zap, Award, Smile, Sparkles, ThumbsUp, Lock, Unlock,
             Edit3, Lightbulb, Download, LogOut, Upload, Database, AlertCircle, Eye, Trash2, ToggleLeft, ToggleRight
         } from 'lucide-react';
@@ -127,10 +127,14 @@
             { id: 'student_001', email: 'student1@example.com', classId: 3, studentNumber: 15, name: '田中 陽翔', category: 'NAT_BIO', theme: '地元の河川における外来種が生態系に与える影響調査' }
         ];
 
-        // --- Logic: Matching (Updated for Strict 3-5 Members) ---
+        // --- Logic: Matching (Strict 3-5 Members + Skill Diversity) ---
         const getRecommendedCandidates = (currentUser, allStudents) => {
             if (!currentUser || !allStudents) return [];
-            const candidates = allStudents.filter(s => s.id !== currentUser.id);
+            
+            // Filter out self AND already voted users
+            const votedIds = Object.keys(currentUser.votes || {});
+            const candidates = allStudents.filter(s => s.id !== currentUser.id && !votedIds.includes(s.id));
+
             const scoredCandidates = candidates.map(student => {
                 let score = 0;
                 if (student.category && student.category === currentUser.category) score += 3;
@@ -146,24 +150,26 @@
             });
             scoredCandidates.sort((a, b) => b.affinityScore - a.affinityScore);
             
-            // Display Top 25 + Random 5
-            const topPicks = scoredCandidates.slice(0, 25);
-            const rest = scoredCandidates.slice(25);
-            const randomPicks = [];
-            const randomCount = Math.min(5, rest.length);
-            const tempRest = [...rest];
-            for (let i = 0; i < randomCount; i++) {
-                if (tempRest.length === 0) break;
-                const idx = Math.floor(Math.random() * tempRest.length);
-                randomPicks.push(tempRest[idx]);
-                tempRest.splice(idx, 1);
-            }
-            return [...topPicks, ...randomPicks].sort(() => Math.random() - 0.5);
+            // Limit to remaining checks needed (Total 30)
+            const currentVoteCount = votedIds.length;
+            const remainingCount = Math.max(0, 30 - currentVoteCount);
+            
+            // Return top matches up to remainingCount
+            // We mix a bit of randomness to avoid deterministic deadlock if multiple people have same score
+            const topSlice = Math.min(remainingCount, scoredCandidates.length);
+            return scoredCandidates.slice(0, topSlice);
         };
 
         const runWeightedMatchingAlgorithm = (students, votes) => {
             if (!students || students.length === 0) return [];
-            const W_MUTUAL_LOVE=1000, W_ONE_WAY_LOVE=100, W_TAG_MATCH=5, W_CAT_MATCH=3;
+            
+            // Weights
+            const W_MUTUAL_LOVE = 1000;
+            const W_ONE_WAY_LOVE = 100;
+            const W_TAG_MATCH = 5;
+            const W_CAT_MATCH = 3;
+            const W_SKILL_PENALTY = 10; 
+
             const scoreMatrix = {}; 
             
             const targetStudents = students.filter(s => s.role !== 'teacher' && s.role !== 'admin');
@@ -174,11 +180,23 @@
                 targetStudents.forEach(s2 => {
                     if (s1.id === s2.id) return;
                     let score = 0;
+                    
+                    // Category Match
                     if (s1.category && s1.category === s2.category) score += W_CAT_MATCH;
+                    
+                    // Topic Match
                     const s1t = s1.topics || []; const s2t = s2.topics || [];
                     score += s1t.filter(t => s2t.includes(t)).length * W_TAG_MATCH;
+
+                    // Skill Diversity Check (Penalty for overlaps)
+                    const s1s = s1.skills || []; const s2s = s2.skills || [];
+                    const commonSkills = s1s.filter(s => s2s.includes(s)).length;
+                    score -= commonSkills * W_SKILL_PENALTY;
+                    
+                    // Votes (Strongest factor)
                     const v1 = votes[s1.id]?.[s2.id] || {};
                     if (v1.love) score += W_ONE_WAY_LOVE;
+                    
                     scoreMatrix[s1.id][s2.id] = score;
                 });
             });
@@ -188,7 +206,7 @@
             const MIN_SIZE = 3;
             const MAX_SIZE = 5;
 
-            // 1. Form Cores (Mutual Love)
+            // 1. Form Cores
             while (unassigned.size > 0) {
                 let bestPair = null, maxScore = -1;
                 const arr = Array.from(unassigned).sort(() => Math.random() - 0.5);
@@ -209,7 +227,7 @@
                 if (unassigned.size === 0) break;
             }
             
-            // 2. Grow Groups (Greedy to 4)
+            // 2. Grow Groups
             for (const group of groups) {
                 while (group.length < 4 && unassigned.size > 0) {
                     let bestCand = null, maxCandScore = -Infinity;
@@ -226,13 +244,13 @@
                 }
             }
 
-            // 3. Assign Leftovers to existing groups (up to 5)
+            // 3. Assign Leftovers
             const leftovers = Array.from(unassigned);
             let homeless = [];
             leftovers.forEach(candId => {
                 let bestGroupIdx = -1, maxFitScore = -Infinity;
                 groups.forEach((group, idx) => {
-                    if (group.length >= MAX_SIZE) return; // Strictly < 5
+                    if (group.length >= MAX_SIZE) return; 
                     let score = 0;
                     group.forEach(mId => score += (scoreMatrix[candId][mId] || 0) + (scoreMatrix[mId][candId] || 0));
                     if (score > maxFitScore) { maxFitScore = score; bestGroupIdx = idx; }
@@ -241,13 +259,11 @@
                 else homeless.push(candId);
             });
 
-            // 4. Handle Homeless & Split Large Groups
-            // First, split any groups > 5 (shouldn't happen with above logic, but safe guard)
+            // 4. Initial check for oversized groups (6+) to split
             let balancedGroups = [];
             groups.forEach(g => {
                 if(g.length <= 5) balancedGroups.push(g);
                 else {
-                    // Split logic: e.g. 6 -> 3,3. 7 -> 4,3.
                     let rem = [...g];
                     while(rem.length > 5) {
                         const splitSize = Math.ceil(rem.length / 2);
@@ -258,129 +274,139 @@
             });
             groups = balancedGroups;
 
-            // If we have homeless, add them to be rebalanced
-            if (homeless.length > 0) groups.push(homeless);
-
-            // 5. Final Rebalancing (CRITICAL: Fix < 3 groups)
-            // If any group is < 3, steal from 5-person groups or merge.
+            // 5. Final Rebalancing (CRITICAL FIX for < 3)
             let iterations = 0;
-            while(iterations < 50) { 
-                const smallGroups = groups.filter(g => g.length < 3);
-                if (smallGroups.length === 0) break; // All valid
+            const MAX_ITERATIONS = 100;
+            
+            // Add initial homeless
+            if (homeless.length > 0) {
+                groups.sort((a,b) => a.length - b.length);
+                const smallG = groups.find(g => g.length < MAX_SIZE);
+                if(smallG) smallG.push(...homeless);
+                else groups.push(homeless);
+                homeless = [];
+            }
 
-                // Take the smallest group (e.g. size 1 or 2)
-                const targetGroup = smallGroups[0]; 
-                
-                // Strategy 1: Steal from a rich group (size 5)
-                const richGroup = groups.find(g => g.length === 5);
-                
-                if (richGroup) {
-                    // Move 1 person from rich to target
-                    const movedMember = richGroup.pop();
-                    targetGroup.push(movedMember);
-                } else {
-                    // Strategy 2: Steal from medium group (size 4) ONLY if target is size 1
-                    const mediumGroup = groups.find(g => g.length === 4);
-                    if (mediumGroup && targetGroup.length < 2) { 
-                        const movedMember = mediumGroup.pop();
-                        targetGroup.push(movedMember);
+            while(iterations < MAX_ITERATIONS) {
+                const smallGroups = groups.filter(g => g.length < 3);
+                if (smallGroups.length === 0) break; 
+
+                let pool = [];
+                for(let i=groups.length-1; i>=0; i--) {
+                    if(groups[i].length < 3) {
+                        pool.push(...groups[i]);
+                        groups.splice(i, 1);
+                    }
+                }
+
+                for(const pid of pool) {
+                    groups.sort((a,b) => a.length - b.length);
+                    const target = groups.find(g => g.length < 5);
+                    
+                    if(target) {
+                        target.push(pid);
                     } else {
-                        // Strategy 3: Merge smallest into another group (even if it makes it 4 or 5)
-                        const groupToDissolveIdx = groups.indexOf(targetGroup);
-                        if (groupToDissolveIdx !== -1) {
-                            groups.splice(groupToDissolveIdx, 1);
-                            
-                            // Distribute members to ANY group < 5
-                            targetGroup.forEach(p => {
-                                const dest = groups.find(g => g.length < 5);
-                                if(dest) dest.push(p);
-                                else {
-                                    // If all are 5, we are stuck. (e.g. 5, 5, 2 -> 12 people. optimal 4,4,4)
-                                    // Push to first group to make 6, then split loop will catch it later
-                                    if(groups.length > 0) groups[0].push(p);
-                                    else groups.push([p]); // Should not happen
-                                }
-                            });
+                        const richGroup = groups.find(g => g.length >= 5);
+                        if(richGroup) {
+                             const stolen = richGroup.splice(0, 2);
+                             groups.push([pid, ...stolen]);
+                        } else {
+                             if(groups.length > 0) groups[0].push(pid);
+                             else groups.push([pid]);
                         }
                     }
                 }
                 
-                // Check if any group became > 5 (due to forced merge) and split
-                const oversizedIdx = groups.findIndex(g => g.length > 5);
-                if(oversizedIdx !== -1) {
-                    const bigGroup = groups[oversizedIdx];
-                    groups.splice(oversizedIdx, 1);
-                    // Split 6 -> 3,3
-                    const half = Math.ceil(bigGroup.length / 2);
-                    groups.push(bigGroup.slice(0, half));
-                    groups.push(bigGroup.slice(half));
+                for (let i = groups.length - 1; i >= 0; i--) {
+                    if (groups[i].length > 5) {
+                        const bigGroup = groups[i];
+                        groups.splice(i, 1);
+                        const half = Math.ceil(bigGroup.length / 2);
+                        groups.push(bigGroup.slice(0, half));
+                        groups.push(bigGroup.slice(half));
+                    }
                 }
-                
                 iterations++;
             }
-
             return groups;
+        };
+
+        const generateMockStudents = (count) => {
+            const mocks = [];
+            const lastNames = ['佐藤', '鈴木', '高橋', '田中', '渡辺', '伊藤', '山本', '中村', '小林', '加藤', '吉田', '山田', '佐々木', '山口', '松本', '井上', '木村', '林', '斎藤', '清水'];
+            const firstNames = ['蓮', '陽翔', '湊', '結菜', '陽葵', '莉子', '大翔', '悠真', '結衣', '楓', '春斗', '芽依', '碧', '朝陽', '詩', '紬', '咲良', '蒼', '樹', '美月'];
+            for (let i = 0; i < count; i++) {
+                const ln = lastNames[Math.floor(Math.random() * lastNames.length)];
+                const fn = firstNames[Math.floor(Math.random() * firstNames.length)];
+                const cat = CATEGORIES[Math.floor(Math.random() * CATEGORIES.length)];
+                const theme = MOCK_THEMES[Math.floor(Math.random() * MOCK_THEMES.length)];
+                const topics = []; const numTopics = Math.random() > 0.7 ? 2 : 1;
+                for(let j=0; j<numTopics; j++) topics.push(TOPIC_TAGS[Math.floor(Math.random() * TOPIC_TAGS.length)].id);
+                const apps = []; const numApps = Math.floor(Math.random() * 3) + 1;
+                for(let j=0; j<numApps; j++) apps.push(APPROACH_TAGS[Math.floor(Math.random() * APPROACH_TAGS.length)].id);
+                const sks = []; const numSkills = Math.floor(Math.random() * 3) + 2;
+                while(sks.length < numSkills) { const s = SKILLS[Math.floor(Math.random() * SKILLS.length)]; if(!sks.includes(s)) sks.push(s); }
+                const classId = Math.floor(Math.random() * 9) + 1;
+                const studentNumber = Math.floor(Math.random() * 40) + 1;
+                mocks.push({
+                    id: `student_${Date.now()}_${i}`,
+                    name: `${ln} ${fn}`,
+                    classId, studentNumber, category: cat.id, theme,
+                    topics: [...new Set(topics)], approaches: [...new Set(apps)], skills: sks,
+                    comment: '良いチームを作りたいです！よろしくお願いします！', timestamp: Date.now()
+                });
+            }
+            return mocks;
         };
 
         // --- CSV Import Component ---
         const DataImporter = ({ onImport }) => {
             const [text, setText] = useState('');
-            
             const handleImport = () => {
                 const rows = text.trim().split('\n');
                 const data = [];
                 rows.forEach(row => {
                     const cols = row.split(',').map(c => c.trim());
                     if(cols.length >= 4) {
-                        data.push({
-                            id: cols[0], // Email as ID
-                            email: cols[0],
-                            classId: parseInt(cols[1]),
-                            studentNumber: parseInt(cols[2]),
-                            name: cols[3],
-                            category: cols[4] || '', // Allow empty
-                            theme: cols[5] || '', // Allow empty
-                            role: cols[6] || 'student', 
-                        });
+                        const classId = parseInt(cols[1]);
+                        const studentNumber = parseInt(cols[2]);
+                        if (!isNaN(classId) && !isNaN(studentNumber)) {
+                            data.push({
+                                id: cols[0], email: cols[0],
+                                classId: classId, studentNumber: studentNumber,
+                                name: cols[3], category: cols[4] || '', theme: cols[5] || '',
+                                role: cols[6] || 'student', 
+                            });
+                        }
                     }
                 });
+                if(data.length === 0) { alert("データが見つかりませんでした。フォーマットを確認してください。"); return; }
                 onImport(data);
                 setText('');
             };
-
             return (
                 <div className="bg-gray-800 p-4 rounded-xl border border-gray-700 mt-4">
                     <h3 className="font-bold text-gray-300 mb-2 flex items-center gap-2"><Upload size={16}/> 生徒データ一括登録 (CSV)</h3>
                     <p className="text-xs text-gray-500 mb-2">Format: email, class, number, name, categoryID, theme, role</p>
-                    <textarea 
-                        className="w-full h-32 bg-gray-900 text-xs font-mono text-green-400 p-2 rounded border border-gray-600 mb-2"
-                        placeholder="student1@example.com, 1, 1, 山田太郎, NAT_MAT, 研究テーマ, student"
-                        value={text}
-                        onChange={(e) => setText(e.target.value)}
-                    />
+                    <textarea className="w-full h-32 bg-gray-900 text-xs font-mono text-green-400 p-2 rounded border border-gray-600 mb-2" placeholder="student1@example.com, 1, 1, 山田太郎, NAT_MAT, 研究テーマ, student" value={text} onChange={(e) => setText(e.target.value)} />
                     <button onClick={handleImport} className="bg-green-600 hover:bg-green-500 text-white px-4 py-2 rounded-lg text-xs font-bold w-full">登録を実行 (上書き更新)</button>
                 </div>
             );
         };
 
         // --- Components ---
-
         const LoginScreen = ({ onLogin }) => (
             <div className="min-h-screen flex items-center justify-center bg-gray-100 p-4">
                 <div className="bg-white p-8 rounded-3xl shadow-xl max-w-md w-full text-center">
-                    <div className="bg-blue-600 w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-6 shadow-lg shadow-blue-200">
-                        <Sparkles size={32} className="text-white"/>
-                    </div>
-                    <h1 className="text-2xl font-black text-gray-800 mb-2">Quest Matcher</h1>
+                    <div className="bg-blue-600 w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-6 shadow-lg shadow-blue-200"><Sparkles size={32} className="text-white"/></div>
+                    <h1 className="text-2xl font-black text-gray-800 mb-2">K-MATCH</h1>
                     <p className="text-gray-500 mb-8">Googleアカウントでログインしてください。<br/>登録済みのユーザーのみ利用可能です。</p>
-                    <button onClick={onLogin} className="w-full bg-white border border-gray-300 text-gray-700 font-bold py-3 rounded-xl flex items-center justify-center gap-3 hover:bg-gray-50 transition">
-                        <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" className="w-5 h-5"/> Googleでログイン
-                    </button>
+                    <button onClick={onLogin} className="w-full bg-white border border-gray-300 text-gray-700 font-bold py-3 rounded-xl flex items-center justify-center gap-3 hover:bg-gray-50 transition"><img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" className="w-5 h-5"/> Googleでログイン</button>
                 </div>
             </div>
         );
 
-        const RosterStatus = ({ students, onSelectStudent }) => {
+        const RosterStatus = ({ students, onSelectStudent, phase }) => {
             return (
                 <div className="mt-8 bg-gray-800 rounded-2xl p-6 border border-gray-700 overflow-x-auto">
                     <h3 className="text-sm font-bold text-gray-400 uppercase tracking-widest mb-4 flex items-center gap-2">
@@ -394,7 +420,16 @@
                                 {STUDENT_NUMBERS.map(num => {
                                     const student = students.find(s => s.classId === cls && s.studentNumber === num);
                                     const isRegistered = !!student;
-                                    const isSubmitted = student && (student.comment || (student.topics && student.topics.length > 0));
+                                    let isSubmitted = false;
+                                    
+                                    // Status Logic:
+                                    // INPUT: Comment exists or Topics selected
+                                    // CHECK: 30 or more actions (votes + skips) recorded
+                                    if(phase === PHASE.INPUT) {
+                                        isSubmitted = student && (student.comment || (student.topics && student.topics.length > 0));
+                                    } else if(phase === PHASE.CHECK) {
+                                        isSubmitted = student && student.votes && Object.keys(student.votes).length >= 30;
+                                    }
                                     
                                     return (
                                         <button 
@@ -403,7 +438,7 @@
                                             className={`aspect-square flex items-center justify-center text-[9px] font-bold rounded-sm transition-all ${
                                                 !isRegistered ? 'bg-gray-800 text-gray-600 cursor-default' :
                                                 isSubmitted ? 'bg-green-500 text-white shadow-[0_0_8px_rgba(34,197,94,0.6)] scale-105 hover:bg-green-400' :
-                                                'bg-yellow-600 text-white hover:bg-yellow-500' // Registered but not submitted
+                                                'bg-yellow-600 text-white hover:bg-yellow-500' 
                                             }`}
                                             title={isRegistered ? `${student.name} (${student.email})` : '未登録'}
                                         >
@@ -417,8 +452,8 @@
                     </div>
                     <div className="flex justify-end gap-4 mt-2 text-xs text-gray-500">
                         <div className="flex items-center gap-2"><div className="w-3 h-3 bg-gray-800 rounded-sm"></div> 未登録</div>
-                        <div className="flex items-center gap-2"><div className="w-3 h-3 bg-yellow-600 rounded-sm"></div> 登録のみ</div>
-                        <div className="flex items-center gap-2"><div className="w-3 h-3 bg-green-500 rounded-sm shadow-[0_0_5px_rgba(34,197,94,0.6)]"></div> 入力完了</div>
+                        <div className="flex items-center gap-2"><div className="w-3 h-3 bg-yellow-600 rounded-sm"></div> 途中/登録のみ</div>
+                        <div className="flex items-center gap-2"><div className="w-3 h-3 bg-green-500 rounded-sm shadow-[0_0_5px_rgba(34,197,94,0.6)]"></div> {phase === PHASE.CHECK ? '30件完了' : '入力完了'}</div>
                     </div>
                 </div>
             );
@@ -437,16 +472,13 @@
                                 <div className="text-2xl font-bold flex items-center gap-3"><span>登録者数: {studentCount}名</span></div>
                             </div>
 
-                            {/* Demo Mode Toggle */}
                             <div className="flex items-center gap-2 bg-gray-800 p-2 rounded-lg border border-gray-700">
                                 <button onClick={() => setIsDemoMode(!isDemoMode)} className="flex items-center gap-2 text-xs font-bold px-2">
                                     {isDemoMode ? <ToggleRight size={24} className="text-green-400"/> : <ToggleLeft size={24} className="text-gray-500"/>}
                                     Demo Mode
                                 </button>
                                 {isDemoMode && phase === PHASE.INPUT && (
-                                    <button onClick={onGenerateDemo} className="bg-gray-700 hover:bg-gray-600 text-xs px-3 py-1 rounded border border-gray-600 flex items-center gap-1">
-                                        <Database size={12}/> +50 Mock
-                                    </button>
+                                    <button onClick={onGenerateDemo} className="bg-gray-700 hover:bg-gray-600 text-xs px-3 py-1 rounded border border-gray-600 flex items-center gap-1"><Database size={12}/> +50 Mock</button>
                                 )}
                             </div>
 
@@ -457,18 +489,23 @@
                                     </button>
                                 )}
                                 {phase === PHASE.CHECK && (
-                                    <button onClick={handleMatching} className="bg-gradient-to-r from-purple-500 to-indigo-600 px-6 py-3 rounded-xl font-bold shadow-lg hover:scale-105 transition flex items-center gap-2">
-                                        <Layers size={18}/> マッチング実行
-                                    </button>
+                                    <>
+                                        <button onClick={() => updatePhase(PHASE.INPUT)} className="bg-gray-700 hover:bg-gray-600 px-4 py-3 rounded-xl font-bold transition flex items-center gap-2"><ArrowLeft size={18}/> 戻る</button>
+                                        <button onClick={handleMatching} className="bg-gradient-to-r from-purple-500 to-indigo-600 px-6 py-3 rounded-xl font-bold shadow-lg hover:scale-105 transition flex items-center gap-2">
+                                            <Layers size={18}/> マッチング実行
+                                        </button>
+                                    </>
                                 )}
                                 {phase === PHASE.MATCHING && (
                                     <>
+                                        <button onClick={() => updatePhase(PHASE.CHECK)} className="bg-gray-700 hover:bg-gray-600 px-4 py-3 rounded-xl font-bold transition flex items-center gap-2"><ArrowLeft size={18}/> 戻る</button>
                                         <button onClick={handleMatching} className="bg-gray-700 hover:bg-gray-600 px-4 py-3 rounded-xl font-bold transition flex items-center gap-2"><RefreshCw size={18}/> 再生成</button>
                                         <button onClick={handlePublish} className="bg-gradient-to-r from-orange-500 to-red-500 px-6 py-3 rounded-xl font-bold shadow-lg hover:scale-105 transition flex items-center gap-2"><Star size={18} fill="white"/> 公開する</button>
                                     </>
                                 )}
                                 {phase === PHASE.PUBLISH && (
                                     <>
+                                        <button onClick={() => updatePhase(PHASE.MATCHING)} className="bg-gray-700 hover:bg-gray-600 px-4 py-3 rounded-xl font-bold transition flex items-center gap-2"><ArrowLeft size={18}/> 戻る</button>
                                         <button onClick={onExport} className="bg-blue-600 hover:bg-blue-500 px-6 py-3 rounded-xl font-bold shadow-lg transition flex items-center gap-2"><Download size={18}/> CSV出力</button>
                                         <div className="flex flex-col gap-1">
                                             <button onClick={reset} className="border border-red-500/50 text-red-400 hover:bg-red-500/10 px-4 py-2 rounded-lg font-bold text-xs transition">リセット</button>
@@ -478,13 +515,10 @@
                                 )}
                             </div>
                         </div>
-                        {/* Status visible in INPUT phase */}
-                        {phase === PHASE.INPUT && (
-                            <>
-                                <DataImporter onImport={onImportData} />
-                                <RosterStatus students={students} onSelectStudent={setSelectedStudent} />
-                            </>
-                        )}
+                        {/* Import in INPUT only */}
+                        {phase === PHASE.INPUT && <DataImporter onImport={onImportData} />}
+                        {/* Status in INPUT and CHECK */}
+                        {(phase === PHASE.INPUT || phase === PHASE.CHECK) && <RosterStatus students={students} onSelectStudent={setSelectedStudent} phase={phase} />}
                     </div>
                     {/* Student Detail Modal */}
                     {selectedStudent && (
@@ -496,14 +530,16 @@
                                 <div className="text-sm mb-6">
                                     <p><strong>カテゴリー:</strong> {CATEGORIES.find(c=>c.id===selectedStudent.category)?.name || selectedStudent.category}</p>
                                     <p><strong>テーマ:</strong> {selectedStudent.theme}</p>
+                                    {/* Added Vote Count for CHECK phase debugging */}
+                                    {phase === PHASE.CHECK && (
+                                        <p className="mt-2 pt-2 border-t text-green-600 font-bold">
+                                            チェック進捗: {selectedStudent.votes ? Object.keys(selectedStudent.votes).length : 0} / 30 件
+                                        </p>
+                                    )}
                                 </div>
                                 <div className="flex gap-2">
-                                    <button onClick={() => { onDeleteStudent(selectedStudent.id); setSelectedStudent(null); }} className="flex-1 bg-red-500 hover:bg-red-600 text-white py-3 rounded-xl font-bold flex items-center justify-center gap-2">
-                                        <Trash2 size={18}/> 登録抹消
-                                    </button>
-                                    <button onClick={() => setSelectedStudent(null)} className="flex-1 bg-gray-200 hover:bg-gray-300 text-gray-700 py-3 rounded-xl font-bold">
-                                        閉じる
-                                    </button>
+                                    <button onClick={() => { onDeleteStudent(selectedStudent.id); setSelectedStudent(null); }} className="flex-1 bg-red-500 hover:bg-red-600 text-white py-3 rounded-xl font-bold flex items-center justify-center gap-2"><Trash2 size={18}/> 登録抹消</button>
+                                    <button onClick={() => setSelectedStudent(null)} className="flex-1 bg-gray-200 hover:bg-gray-300 text-gray-700 py-3 rounded-xl font-bold">閉じる</button>
                                 </div>
                             </div>
                         </div>
@@ -531,7 +567,7 @@
                 });
             };
             const currentCategory = CATEGORIES.find(c => c.id === formData.category) || { name: '未設定', group: '-', color: 'from-gray-400 to-gray-300' };
-            const isCategoryLocked = !!currentUser.category; // Locked if pre-set in DB
+            const isCategoryLocked = !!currentUser.category; 
             const isThemeLocked = !!currentUser.theme;
             const sectionTitleClass = "text-lg font-bold text-gray-800 mb-4 flex items-center gap-2 border-b-2 border-gray-100 pb-2";
 
@@ -577,7 +613,6 @@
                                 )}
                             </div>
                         </section>
-                        
                         <section>
                             <label className={sectionTitleClass}><Sparkles size={20} className="text-purple-500"/> トピックカードを選択（最大5つ）<span className="ml-auto text-xs font-bold text-blue-500 bg-blue-50 px-2 py-1 rounded-full">{(formData.topics||[]).length}/5</span></label>
                             <div className="flex flex-wrap gap-2">{TOPIC_TAGS.map(t => (<button key={t.id} onClick={() => toggleSelection('topics', t.id)} className={`text-xs px-4 py-2 rounded-lg border font-bold transition-all duration-200 ${(formData.topics||[]).includes(t.id) ? 'bg-blue-600 border-blue-600 text-white shadow-md transform scale-105' : 'bg-white border-gray-200 text-gray-600 hover:border-blue-300 hover:bg-gray-50'}`}>{t.name}</button>))}</div>
@@ -604,22 +639,32 @@
             const [currentIndex, setCurrentIndex] = useState(0);
             const [direction, setDirection] = useState(null);
             const [selections, setSelections] = useState({ direction: false, skill: false, love: false });
+            
             const candidates = useMemo(() => getRecommendedCandidates(currentUser, students), [students.length, currentUser.id]);
             const currentStudent = candidates[currentIndex];
+            
             useEffect(() => { setSelections({ direction: false, skill: false, love: false }); }, [currentIndex]);
             const toggleSelection = (type) => setSelections(prev => ({ ...prev, [type]: !prev[type] }));
             const hasSelection = useMemo(() => Object.values(selections).some(v => v), [selections]);
+            
             const handleSwipe = (dir) => {
                 if (!currentStudent || direction || (dir === 'right' && !hasSelection)) return;
                 setDirection(dir);
-                if (dir === 'right') onVote(currentStudent.id, selections);
+                
+                // [FIX] Always record vote (even skip) to progress status
+                const voteData = dir === 'right' ? selections : { skipped: true };
+                onVote(currentStudent.id, voteData);
+                
                 setTimeout(() => { setDirection(null); setCurrentIndex(prev => prev + 1); }, 400);
             };
+
             if (currentIndex >= candidates.length) return <div className="flex flex-col items-center justify-center h-[70vh] text-center p-6"><div className="bg-green-100 p-6 rounded-full mb-6 animate-bounce"><CheckCircle size={64} className="text-green-600" /></div><h2 className="text-2xl font-bold text-gray-800 mb-2">チェック完了！</h2><p className="text-gray-500">先生のマッチング開始をお待ちください。</p></div>;
+
             const categoryData = CATEGORIES.find(c => c.id === currentStudent.category) || CATEGORIES[0];
             let cardClass = "absolute inset-0 bg-white rounded-3xl shadow-2xl border border-gray-100 overflow-hidden flex flex-col transition-all duration-500 ease-out";
             if (direction === 'left') cardClass += " transform -translate-x-[150%] -rotate-12 opacity-0";
             else if (direction === 'right') cardClass += " transform translate-x-[150%] rotate-12 opacity-0";
+
             return (
                 <div className="flex flex-col items-center justify-center min-h-[85vh] p-4 overflow-hidden relative">
                     <div className="w-full max-w-md aspect-[3/4] relative">
@@ -639,15 +684,13 @@
                                 <div className="mt-2"><div className="text-sm font-bold text-gray-800 mb-2 flex items-center gap-2 border-b border-gray-100 pb-1"><Smile size={16} className="text-pink-500"/> ひとこと</div><div className="bg-gray-50 p-4 rounded-xl border border-gray-100 relative"><p className="text-sm text-gray-600 italic">"{currentStudent.comment}"</p></div></div>
                             </div>
                             <div className="absolute bottom-0 left-0 right-0 bg-white/95 backdrop-blur-sm border-t p-4 pb-6 flex gap-2 justify-center">
+                                <button onClick={() => handleSwipe('left')} className={`flex-1 py-3 rounded-xl flex flex-col items-center transition border-2 border-gray-200 text-gray-400 hover:bg-red-50 hover:text-red-500 hover:border-red-200`}><X size={20} /><span className="text-[10px] font-bold mt-1">スキップ</span></button>
                                 <button onClick={() => toggleSelection('direction')} className={`flex-1 py-3 rounded-xl flex flex-col items-center transition border-2 ${selections.direction ? 'bg-green-50 border-green-500 text-green-700' : 'bg-gray-50 border-transparent text-gray-400 hover:bg-gray-100'}`}><CheckCircle size={20} className={selections.direction ? 'fill-current' : ''}/><span className="text-[10px] font-bold mt-1">方向性</span></button>
                                 <button onClick={() => toggleSelection('skill')} className={`flex-1 py-3 rounded-xl flex flex-col items-center transition border-2 ${selections.skill ? 'bg-blue-50 border-blue-500 text-blue-700' : 'bg-gray-50 border-transparent text-gray-400 hover:bg-gray-100'}`}><Zap size={20} className={selections.skill ? 'fill-current' : ''}/><span className="text-[10px] font-bold mt-1">スキル</span></button>
                                 <button onClick={() => toggleSelection('love')} className={`flex-1 py-3 rounded-xl flex flex-col items-center transition border-2 ${selections.love ? 'bg-pink-50 border-pink-500 text-pink-700' : 'bg-gray-50 border-transparent text-gray-400 hover:bg-gray-100'}`}><Heart size={20} className={selections.love ? 'fill-current' : ''}/><span className="text-[10px] font-bold mt-1">組みたい</span></button>
+                                <button onClick={() => handleSwipe('right')} disabled={!hasSelection} className={`flex-1 py-3 rounded-xl flex flex-col items-center transition border-2 ${hasSelection ? 'bg-blue-600 text-white border-blue-600' : 'bg-gray-200 text-gray-400 border-gray-200'}`}><ThumbsUp size={20} /><span className="text-[10px] font-bold mt-1">送信</span></button>
                             </div>
                         </div>
-                    </div>
-                    <div className="w-full max-w-md mt-6 flex items-center justify-between gap-6 px-4">
-                        <button onClick={() => handleSwipe('left')} className="w-16 h-16 rounded-full bg-white border-2 border-gray-200 text-gray-400 shadow-lg flex items-center justify-center hover:bg-red-50 hover:text-red-400 hover:border-red-200 hover:scale-110 transition-all active:scale-95"><X size={32} strokeWidth={3} /></button>
-                        <div className="flex-1"><button onClick={() => handleSwipe('right')} disabled={!hasSelection} className={`w-full py-4 rounded-2xl shadow-xl flex items-center justify-center gap-2 font-bold text-white transition-all active:scale-95 ${hasSelection ? 'bg-gradient-to-r from-blue-500 to-purple-600 hover:scale-[1.02] cursor-pointer' : 'bg-gray-300 cursor-not-allowed text-gray-100'}`}>{hasSelection ? <ThumbsUp size={20} /> : <Lock size={20} />}{hasSelection ? 'いいねを送る' : 'タグを選択してください'}</button></div>
                     </div>
                     <div className="text-xs text-gray-400 mt-4 font-mono">{currentIndex + 1} / {candidates.length} Cards</div>
                 </div>
@@ -769,13 +812,10 @@
                 await updateDoc(userRef, { votes: { ...currentVotes, [targetId]: selections } });
             };
             const handleGenerateMock = () => {
-                // Generate and save to Firestore
                 const mocks = generateMockStudents(50);
                 const batch = writeBatch(db);
                 mocks.forEach(data => {
-                    // Use fake emails for ID
                     const ref = doc(db, 'users', `mock_${data.id}`); 
-                    // Add email field
                     batch.set(ref, { ...data, email: `mock_${data.id}@example.com` }); 
                 });
                 batch.commit().then(() => alert("デモデータ50件を追加しました"));
@@ -788,7 +828,7 @@
             };
             const handleDeleteStudent = async (studentId) => {
                 if(!confirm("本当にこの生徒を削除しますか？この操作は取り消せません。")) return;
-                await deleteDoc(doc(db, 'users', studentId)); // studentId is email
+                await deleteDoc(doc(db, 'users', studentId)); 
             };
             const handleDeleteAll = async () => {
                 if(!confirm("【警告】全生徒データを削除しますか？\nCSVによる再登録が必要になります。\n本当によろしいですか？")) return;
@@ -869,7 +909,7 @@
                 <div className="min-h-screen bg-gray-50 font-sans text-gray-800 selection:bg-blue-200">
                     <header className="bg-white/80 backdrop-blur-md border-b border-gray-200 sticky top-0 z-50">
                         <div className="max-w-4xl mx-auto px-4 h-16 flex justify-between items-center">
-                            <div className="flex items-center gap-2"><div className="bg-gradient-to-tr from-blue-500 to-purple-500 text-white p-2 rounded-xl shadow-lg"><Sparkles size={20} fill="white" /></div><div><h1 className="font-bold text-gray-800 leading-tight">Team Match</h1></div></div>
+                            <div className="flex items-center gap-2"><div className="bg-gradient-to-tr from-blue-500 to-purple-500 text-white p-2 rounded-xl shadow-lg"><Sparkles size={20} fill="white" /></div><div><h1 className="font-bold text-gray-800 leading-tight">K-MATCH</h1></div></div>
                             <div className="flex items-center gap-3"><span className="text-xs font-bold px-3 py-1 bg-gray-100 rounded-full text-gray-600">{phase}</span><button onClick={handleLogout} className="text-gray-400 hover:text-gray-600"><LogOut size={20}/></button></div>
                         </div>
                     </header>
