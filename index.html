@@ -6,7 +6,7 @@
     <title>K-MATCH</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-    
+
     <!-- Import Map: ライブラリの読み込み -->
     <script type="importmap">
     {
@@ -33,7 +33,7 @@
             CheckCircle, X, Zap, Award, Smile, Sparkles, ThumbsUp, Lock, Unlock,
             Edit3, Lightbulb, Download, LogOut, Upload, Database, AlertCircle, Eye, Trash2, ToggleLeft, ToggleRight, BarChart2
         } from 'lucide-react';
-        
+
         // --- Firebase Imports & Config ---
         import { initializeApp } from "firebase/app";
         import { 
@@ -96,7 +96,7 @@
             { id: 'T23', name: '定義・法則・数式' }, { id: 'T24', name: '解析（画像/音声/動画）' },
             { id: 'T25', name: 'シミュレーション' }, { id: 'T26', name: '統計・データ' },
             { id: 'T27', name: '教育×ICT' }, { id: 'T28', name: 'AI・生成AI' }, 
-            
+
             { id: 'T29', name: '株・為替' }, { id: 'T30', name: 'SDGs' }, { id: 'T31', name: '安全保障' }, { id: 'T32', name: '国際情勢' },
             { id: 'T33', name: '文化と社会' }, { id: 'T34', name: '法律・校則' }, { id: 'T35', name: '地域の特色' },
             { id: 'T36', name: '経済活動' }, { id: 'T37', name: '環境と満足度' }, { id: 'T38', name: '映画・芸術' },
@@ -122,10 +122,111 @@
         ];
 
         const SKILLS = ['データ分析', '統計処理', 'プログラミング', '英語文献読解', '実験手技', '工作・DIY', 'デザイン', '動画編集', 'リーダーシップ', 'プレゼン'];
-        
+
+        // ===============================
+        // [NEW] Category distance settings
+        // ===============================
+
+        // 0: same category
+        // 1: near category (you want to mix if needed)
+        // 2: same field but not near
+        // 3: different field (avoid strongly)
+        const CAT_NEIGHBORS = {
+            // --- Natural ---
+            NAT_PHY: ['NAT_INF','NAT_MAT'],
+            NAT_INF: ['NAT_PHY'],
+            NAT_MAT: ['NAT_PHY','NAT_EAR'],
+            NAT_BIO: ['NAT_EAR'],
+            NAT_EAR: ['NAT_BIO','NAT_MAT'],
+
+            // --- Social ---
+            SOC_ECO: ['SOC_PUB','SOC_SOC'],
+            SOC_PUB: ['SOC_ECO','SOC_INT'],
+            SOC_SOC: ['SOC_EDU','SOC_ECO'],
+            SOC_EDU: ['SOC_SOC'],
+            SOC_INT: ['SOC_PUB'],
+
+            // --- Humanities ---
+            HUM_LNG: ['HUM_LIT'],
+            HUM_LIT: ['HUM_LNG','HUM_ART'],
+            HUM_ART: ['HUM_LIT'],
+            HUM_HIS: ['HUM_PHL'],
+            HUM_PHL: ['HUM_HIS'],
+        };
+
+        const FIELD_MISMATCH_PENALTY = 2000; // 別分野混合をほぼ禁止にしたいなら大きめ
+        const CAT_MISSING_PENALTY    = 400;  // categoryが空の人が混ざりやすいのを防ぐ
+
+        // [NEW] Weights (tune here)
+        const W = {
+            // votes (A)
+            MUTUAL_LOVE: 900,
+            ONE_LOVE: 160,
+
+            MUTUAL_DIR: 320,
+            ONE_DIR: 55,
+
+            MUTUAL_SKILL: 220,
+            ONE_SKILL: 35,
+
+            // profile similarity
+            TOPIC_MATCH: 12,
+            APPROACH_MATCH: 6,
+
+            // category distance (core)
+            CAT_SAME_BONUS: 260,   // dist=0
+            CAT_NEAR_BONUS: 160,   // dist=1
+            FIELD_SAME_BONUS: 20,  // dist=2
+            CAT_DIST_PENALTY: 120, // distが増えるほど引く（dist=2で-240など）
+
+            // skills (B)
+            SKILL_OVERLAP_PENALTY: 3,  // 以前の -10 より弱く（多様性はチーム側で評価）
+            TEAM_UNIQUE_SKILL_BONUS: 4, // ユニークスキル数に応じてチーム加点（metrics/最適化で使用）
+
+            // skipped (任意)
+            BOTH_SKIPPED_PENALTY: 20,
+        };
+
+        // field判定
+        const getField = (catId) => {
+            if (!catId) return 'UNK';
+            if (catId.startsWith('NAT_')) return 'NAT';
+            if (catId.startsWith('SOC_')) return 'SOC';
+            if (catId.startsWith('HUM_')) return 'HUM';
+            return 'UNK';
+        };
+
+        const isNeighborCat = (c1, c2) => {
+            if (!c1 || !c2) return false;
+            const n1 = CAT_NEIGHBORS[c1] || [];
+            const n2 = CAT_NEIGHBORS[c2] || [];
+            return n1.includes(c2) || n2.includes(c1);
+        };
+
+        const categoryDistance = (c1, c2) => {
+            if (!c1 || !c2) return 2;         // 未入力は「同分野遠い」扱い（＋別途ペナルティ）
+            if (c1 === c2) return 0;
+            if (isNeighborCat(c1, c2)) return 1;
+            const f1 = getField(c1), f2 = getField(c2);
+            if (f1 !== 'UNK' && f2 !== 'UNK' && f1 === f2) return 2;
+            return 3;
+        };
+
+        // distに応じたカテゴリスコア（最優先の核）
+        const categoryAffinityScore = (c1, c2) => {
+            const dist = categoryDistance(c1, c2);
+            if (!c1 || !c2) return -CAT_MISSING_PENALTY;
+
+            if (dist === 0) return W.CAT_SAME_BONUS;
+            if (dist === 1) return W.CAT_NEAR_BONUS;
+            if (dist === 2) return W.FIELD_SAME_BONUS - (W.CAT_DIST_PENALTY * 2);
+            // dist===3
+            return -FIELD_MISMATCH_PENALTY;
+        };
+
         // Mock Themes for demo data generation
         const MOCK_THEMES = ["未利用魚を活用した新商品開発", "学校内のプラゴミ削減", "AI古文解読アプリ", "伝統工芸のリブランディング", "植物由来代替肉の研究", "避難経路シミュレーション"];
-        
+
         const PHASE = { INPUT: 'INPUT', CHECK: 'CHECK', MATCHING: 'MATCHING', PUBLISH: 'PUBLISH' };
         const CLASS_LIST = Array.from({ length: 9 }, (_, i) => i + 1);
         const STUDENT_NUMBERS = Array.from({ length: 40 }, (_, i) => i + 1);
@@ -156,272 +257,435 @@
                 : 'bg-rose-50 border-rose-300 text-rose-800 hover:bg-rose-100';
         };
 
-        // --- Logic: Metrics Calculation [NEW] ---
-        const calculateTeamMetrics = (groupMembers) => {
-            if (!groupMembers || groupMembers.length < 2) return { score: 0, connection: 0, interest: 0, diversity: 0, mutualPairs: 0 };
+        // ===============================
+        // [NEW] Common utilities for matching
+        // ===============================
+        const commonCount = (a = [], b = []) => {
+            const setB = new Set(b);
+            let c = 0;
+            a.forEach(x => { if (setB.has(x)) c++; });
+            return c;
+        };
 
-            let connectionScore = 0;
+        // ===============================
+        // [NEW] Pair score (undirected)
+        // ===============================
+        const pairScoreUndirected = (s1, s2, votes) => {
+            let score = 0;
+
+            // --- category distance (core priority) ---
+            score += categoryAffinityScore(s1.category, s2.category);
+
+            // --- topics / approaches similarity ---
+            score += commonCount(s1.topics || [], s2.topics || []) * W.TOPIC_MATCH;
+            score += commonCount(s1.approaches || [], s2.approaches || []) * W.APPROACH_MATCH;
+
+            // --- skill overlap penalty (B: softer) ---
+            const commonSkills = commonCount(s1.skills || [], s2.skills || []);
+            score -= commonSkills * W.SKILL_OVERLAP_PENALTY;
+
+            // --- votes (A) ---
+            const v12 = votes?.[s1.id]?.[s2.id] || {};
+            const v21 = votes?.[s2.id]?.[s1.id] || {};
+
+            // love
+            if (v12.love && v21.love) score += W.MUTUAL_LOVE;
+            else if (v12.love || v21.love) score += W.ONE_LOVE;
+
+            // direction
+            if (v12.direction && v21.direction) score += W.MUTUAL_DIR;
+            else if (v12.direction || v21.direction) score += W.ONE_DIR;
+
+            // skill (vote)
+            if (v12.skill && v21.skill) score += W.MUTUAL_SKILL;
+            else if (v12.skill || v21.skill) score += W.ONE_SKILL;
+
+            // skipped penalty (optional)
+            if (v12.skipped && v21.skipped) score -= W.BOTH_SKIPPED_PENALTY;
+
+            return score;
+        };
+
+        // ===============================
+        // [REPLACE] Metrics aligned with objective (E)
+        // ===============================
+        const calculateTeamMetrics = (groupMembers, allStudents, votes) => {
+            // groupMembers: student objects[]
+            if (!groupMembers || groupMembers.length < 2) {
+                return { score: 0, purity: 0, avgCatDistance: 0, crossFieldPairs: 0, mutualPairs: 0, connection: 0, interest: 0, diversity: 0, uniqueSkillsCount: 0 };
+            }
+
+            // --- purity (dominant category ratio) ---
+            const cats = groupMembers.map(m => m.category).filter(Boolean);
+            const counts = {};
+            cats.forEach(c => counts[c] = (counts[c] || 0) + 1);
+            const maxCat = Object.values(counts).reduce((a,b) => Math.max(a,b), 0);
+            const purity = cats.length ? (maxCat / groupMembers.length) : 0;
+
+            // --- avg distance & cross-field pairs ---
+            let distSum = 0;
+            let pairCount = 0;
+            let crossFieldPairs = 0;
+
+            // --- connection/interest/diversity (aligned) ---
+            let connection = 0;
+            let interest = 0;
             let mutualPairs = 0;
-            let interestScore = 0;
-            
-            // Analyze pairs
+
             for (let i = 0; i < groupMembers.length; i++) {
                 for (let j = i + 1; j < groupMembers.length; j++) {
                     const s1 = groupMembers[i];
                     const s2 = groupMembers[j];
-                    
-                    const v1to2 = s1.votes?.[s2.id]?.love;
-                    const v2to1 = s2.votes?.[s1.id]?.love;
 
-                    if (v1to2 && v2to1) {
-                        connectionScore += 15; // Mutual Love
-                        mutualPairs++;
-                    } else if (v1to2 || v2to1) {
-                        connectionScore += 5; // One-way Love
-                    }
+                    const dist = categoryDistance(s1.category, s2.category);
+                    distSum += dist;
+                    pairCount++;
+                    if (dist === 3) crossFieldPairs++;
 
-                    // Interest (Category match) [MODIFIED] Increased weight
-                    if (s1.category && s1.category === s2.category) {
-                        interestScore += 10;
-                    }
-                    // Interest (Topic match)
-                    const s1Topics = s1.topics || [];
-                    const s2Topics = s2.topics || [];
-                    const commonTopics = s1Topics.filter(t => s2Topics.includes(t));
-                    interestScore += commonTopics.length * 2;
+                    // votes
+                    const v12 = votes?.[s1.id]?.[s2.id] || {};
+                    const v21 = votes?.[s2.id]?.[s1.id] || {};
+
+                    if (v12.love && v21.love) { connection += W.MUTUAL_LOVE; mutualPairs++; }
+                    else if (v12.love || v21.love) connection += W.ONE_LOVE;
+
+                    if (v12.direction && v21.direction) interest += W.MUTUAL_DIR;
+                    else if (v12.direction || v21.direction) interest += W.ONE_DIR;
+
+                    if (v12.skill && v21.skill) interest += W.MUTUAL_SKILL;
+                    else if (v12.skill || v21.skill) interest += W.ONE_SKILL;
+
+                    // topics/approaches similarity
+                    interest += commonCount(s1.topics || [], s2.topics || []) * W.TOPIC_MATCH;
+                    interest += commonCount(s1.approaches || [], s2.approaches || []) * W.APPROACH_MATCH;
                 }
             }
 
-            // [NEW] Category Consistency Bonus (Team level)
-            const categories = groupMembers.map(m => m.category).filter(Boolean);
-            const catCounts = {};
-            let maxCatCount = 0;
-            categories.forEach(c => { 
-                catCounts[c] = (catCounts[c] || 0) + 1; 
-                if(catCounts[c] > maxCatCount) maxCatCount = catCounts[c];
-            });
-            const categoryBonus = groupMembers.length > 0 ? (maxCatCount / groupMembers.length) * 20 : 0;
+            const avgCatDistance = pairCount ? (distSum / pairCount) : 0;
 
-            // Diversity (Unique Skills count)
-            const allSkills = new Set();
-            groupMembers.forEach(s => (s.skills || []).forEach(sk => allSkills.add(sk)));
-            const diversityScore = allSkills.size * 3;
+            // diversity (team unique skills)
+            const skillSet = new Set();
+            groupMembers.forEach(s => (s.skills || []).forEach(sk => skillSet.add(sk)));
+            const uniqueSkillsCount = skillSet.size;
+            const diversity = uniqueSkillsCount * W.TEAM_UNIQUE_SKILL_BONUS;
 
-            // Total Score Normalize (Rough calculation for display)
-            // Base 30 points
-            let total = 30 + connectionScore + interestScore + categoryBonus + diversityScore;
-            if (total > 100) total = 100;
+            // Composite score: favor purity & low distance strongly, then add connection/interest/diversity
+            // ※100に正規化（表示用）
+            let raw = 0;
+            raw += purity * 500;                 // purity最重視
+            raw += (1 - Math.min(1, avgCatDistance / 3)) * 300; // distanceが小さいほど加点
+            raw += (connection / 10);            // スケール調整
+            raw += (interest / 10);
+            raw += diversity;
+
+            // cross-field is a hard red flag
+            raw -= crossFieldPairs * 400;
+
+            let score = Math.max(0, Math.min(100, Math.round(raw / 10)));
 
             return {
-                score: Math.min(100, Math.round(total)),
-                connection: connectionScore,
-                interest: Math.round(interestScore + categoryBonus),
-                diversity: diversityScore,
+                score,
+                purity: Math.round(purity * 100) / 100,
+                avgCatDistance: Math.round(avgCatDistance * 100) / 100,
+                crossFieldPairs,
                 mutualPairs,
-                uniqueSkillsCount: allSkills.size
+                connection: Math.round(connection),
+                interest: Math.round(interest),
+                diversity: Math.round(diversity),
+                uniqueSkillsCount
             };
         };
 
-        // --- Logic: Matching (Strict 3-5 Members + Skill Diversity) ---
-        const getRecommendedCandidates = (currentUser, allStudents) => {
-            if (!currentUser || !allStudents) return [];
-            
-            // Filter out self AND already voted users
-            const votedIds = Object.keys(currentUser.votes || {});
-            const candidates = allStudents.filter(s => s.id !== currentUser.id && !votedIds.includes(s.id));
-
-            const scoredCandidates = candidates.map(student => {
-                let score = 0;
-                if (student.category && student.category === currentUser.category) score += 3;
-                const cTopics = student.topics || [];
-                const myTopics = currentUser.topics || [];
-                const commonTopics = cTopics.filter(t => myTopics.includes(t));
-                score += commonTopics.length * 5;
-                const cApps = student.approaches || [];
-                const myApps = currentUser.approaches || [];
-                const commonApps = cApps.filter(a => myApps.includes(a));
-                score += commonApps.length * 2;
-                return { ...student, affinityScore: score };
-            });
-            scoredCandidates.sort((a, b) => b.affinityScore - a.affinityScore);
-            
-            // Limit to remaining checks needed (Total 30)
-            const currentVoteCount = votedIds.length;
-            const remainingCount = Math.max(0, 30 - currentVoteCount);
-            
-            const topSlice = Math.min(remainingCount, scoredCandidates.length);
-            return scoredCandidates.slice(0, topSlice);
-        };
-
+        // ===============================
+        // [REPLACE] Matching algorithm (C + D + category distance)
+        // ===============================
         const runWeightedMatchingAlgorithm = (students, votes) => {
             if (!students || students.length === 0) return [];
-            
-            // Weights
-            const W_MUTUAL_LOVE = 1000;
-            const W_ONE_WAY_LOVE = 100;
-            const W_TAG_MATCH = 10;
-            const W_CAT_MATCH = 30;
-            const W_SKILL_PENALTY = 10; 
 
-            const scoreMatrix = {}; 
-            
-            const targetStudents = students.filter(s => s.role !== 'teacher' && s.role !== 'admin');
-            
-            // Build Score Matrix
-            targetStudents.forEach(s1 => {
-                scoreMatrix[s1.id] = {};
-                targetStudents.forEach(s2 => {
-                    if (s1.id === s2.id) return;
-                    let score = 0;
-                    
-                    // Category Match
-                    if (s1.category && s1.category === s2.category) score += W_CAT_MATCH;
-                    
-                    // Topic Match
-                    const s1t = s1.topics || []; const s2t = s2.topics || [];
-                    score += s1t.filter(t => s2t.includes(t)).length * W_TAG_MATCH;
+            const target = students.filter(s => s.role !== 'teacher' && s.role !== 'admin');
+            const ids = target.map(s => s.id);
+            const byId = Object.fromEntries(target.map(s => [s.id, s]));
 
-                    // Skill Diversity Check (Penalty for overlaps)
-                    const s1s = s1.skills || []; const s2s = s2.skills || [];
-                    const commonSkills = s1s.filter(s => s2s.includes(s)).length;
-                    score -= commonSkills * W_SKILL_PENALTY;
-                    
-                    // Votes (Strongest factor)
-                    const v1 = votes[s1.id]?.[s2.id] || {};
-                    if (v1.love) score += W_ONE_WAY_LOVE;
-                    
-                    scoreMatrix[s1.id][s2.id] = score;
-                });
-            });
-
-            const unassigned = new Set(targetStudents.map(s => s.id));
-            let groups = [];
             const MIN_SIZE = 3;
             const MAX_SIZE = 5;
+            const IDEAL_SIZE = 4;
 
-            // 1. Form Cores
+            // Precompute pair scores
+            const ps = {}; // ps[a][b] => undirected score
+            for (let i = 0; i < ids.length; i++) {
+                const a = ids[i];
+                ps[a] = ps[a] || {};
+                for (let j = i + 1; j < ids.length; j++) {
+                    const b = ids[j];
+                    const sc = pairScoreUndirected(byId[a], byId[b], votes);
+                    ps[a][b] = sc;
+                    ps[b] = ps[b] || {};
+                    ps[b][a] = sc;
+                }
+            }
+
+            // Helper: sum score of candidate to group
+            const fitScore = (candId, group) => {
+                let sum = 0;
+                group.forEach(m => { sum += (ps[candId]?.[m] || 0); });
+                return sum;
+            };
+
+            // Helper: category cohesion penalty at team level (D用の目的関数)
+            const teamCohesionPenalty = (group) => {
+                // 目的：カテゴリ距離の合計を下げたい（= 近いカテゴリで固めたい）
+                let penalty = 0;
+                for (let i = 0; i < group.length; i++) {
+                    for (let j = i + 1; j < group.length; j++) {
+                        const s1 = byId[group[i]], s2 = byId[group[j]];
+                        const dist = categoryDistance(s1.category, s2.category);
+                        // dist=3 は強烈に罰する（別分野混合を極力防止）
+                        if (dist === 3) penalty += FIELD_MISMATCH_PENALTY;
+                        else penalty += dist * 120; // dist=0,1,2 を段階的に罰
+                    }
+                }
+                // 多様性は “重複ペナルティを弱めた代わりに” チームのユニークスキルで少しボーナス
+                const unique = new Set();
+                group.forEach(id => (byId[id].skills || []).forEach(sk => unique.add(sk)));
+                penalty -= unique.size * W.TEAM_UNIQUE_SKILL_BONUS;
+
+                return penalty;
+            };
+
+            const teamObjective = (group) => {
+                // ペアスコア合計 - チームペナルティ
+                let sum = 0;
+                for (let i = 0; i < group.length; i++) {
+                    for (let j = i + 1; j < group.length; j++) {
+                        sum += (ps[group[i]]?.[group[j]] || 0);
+                    }
+                }
+                return sum - teamCohesionPenalty(group);
+            };
+
+            const totalObjective = (groups) => groups.reduce((acc, g) => acc + teamObjective(g), 0);
+
+            // -------------------------------
+            // (C) Build initial groups:
+            // "near-category first" greedy seeding + grow
+            // -------------------------------
+            const unassigned = new Set(ids);
+            const groups = [];
+
+            const pickSeed = () => {
+                // seed = unassignedの中で「近い候補が多い」人（カテゴリが埋まってる人）を優先
+                let best = null;
+                let bestScore = -Infinity;
+                for (const id of unassigned) {
+                    const s = byId[id];
+                    const cat = s.category;
+                    let deg = 0;
+                    for (const id2 of unassigned) {
+                        if (id2 === id) continue;
+                        const s2 = byId[id2];
+                        const d = categoryDistance(cat, s2.category);
+                        if (d <= 1) deg += 2;
+                        else if (d === 2) deg += 1;
+                    }
+                    // votesが多いほど（相互好意が出やすい）少し優先
+                    const vcnt = s.votes ? Object.keys(s.votes).length : 0;
+                    const sc = deg * 10 + Math.min(vcnt, 30);
+                    if (sc > bestScore) { bestScore = sc; best = id; }
+                }
+                return best;
+            };
+
+            const pickBestPartner = (seedId) => {
+                let best = null;
+                let bestSc = -Infinity;
+                const s = byId[seedId];
+                // まず dist<=1 を最優先
+                for (const id2 of unassigned) {
+                    if (id2 === seedId) continue;
+                    const d = categoryDistance(s.category, byId[id2].category);
+                    if (d > 1) continue;
+                    const sc = ps[seedId]?.[id2] || -Infinity;
+                    if (sc > bestSc) { bestSc = sc; best = id2; }
+                }
+                if (best) return best;
+                // 次に dist<=2
+                for (const id2 of unassigned) {
+                    if (id2 === seedId) continue;
+                    const d = categoryDistance(s.category, byId[id2].category);
+                    if (d > 2) continue;
+                    const sc = ps[seedId]?.[id2] || -Infinity;
+                    if (sc > bestSc) { bestSc = sc; best = id2; }
+                }
+                if (best) return best;
+                // 最後の手段
+                for (const id2 of unassigned) {
+                    if (id2 === seedId) continue;
+                    const sc = ps[seedId]?.[id2] || -Infinity;
+                    if (sc > bestSc) { bestSc = sc; best = id2; }
+                }
+                return best;
+            };
+
             while (unassigned.size > 0) {
-                let bestPair = null, maxScore = -1;
-                const arr = Array.from(unassigned).sort(() => Math.random() - 0.5);
-                for (let i = 0; i < arr.length; i++) {
-                    for (let j = i + 1; j < arr.length; j++) {
-                        const id1 = arr[i], id2 = arr[j];
-                        let pairScore = (scoreMatrix[id1][id2] || 0) + (scoreMatrix[id2][id1] || 0);
-                        const v1 = votes[id1]?.[id2] || {};
-                        const v2 = votes[id2]?.[id1] || {};
-                        if (v1.love && v2.love) pairScore += W_MUTUAL_LOVE * 2;
-                        if (pairScore > maxScore) { maxScore = pairScore; bestPair = [id1, id2]; }
-                    }
-                }
-                if (!bestPair) break;
-                const newGroup = [...bestPair];
-                newGroup.forEach(id => unassigned.delete(id));
-                groups.push(newGroup);
-                if (unassigned.size === 0) break;
-            }
-            
-            // 2. Grow Groups
-            for (const group of groups) {
-                while (group.length < 4 && unassigned.size > 0) {
-                    let bestCand = null, maxCandScore = -Infinity;
-                    for (const candId of unassigned) {
-                        let totalScore = 0;
-                        group.forEach(mId => {
-                            totalScore += (scoreMatrix[candId][mId] || 0) + (scoreMatrix[mId][candId] || 0);
-                            const v = votes[candId]?.[mId] || {};
-                            if(v.love) totalScore += W_ONE_WAY_LOVE;
-                        });
-                        if (totalScore > maxCandScore) { maxCandScore = totalScore; bestCand = candId; }
-                    }
-                    if (bestCand) { group.push(bestCand); unassigned.delete(bestCand); } else break;
-                }
-            }
+                const seed = pickSeed();
+                if (!seed) break;
 
-            // 3. Assign Leftovers
-            const leftovers = Array.from(unassigned);
-            let homeless = [];
-            leftovers.forEach(candId => {
-                let bestGroupIdx = -1, maxFitScore = -Infinity;
-                groups.forEach((group, idx) => {
-                    if (group.length >= MAX_SIZE) return; 
-                    let score = 0;
-                    group.forEach(mId => score += (scoreMatrix[candId][mId] || 0) + (scoreMatrix[mId][candId] || 0));
-                    if (score > maxFitScore) { maxFitScore = score; bestGroupIdx = idx; }
-                });
-                if (bestGroupIdx !== -1) groups[bestGroupIdx].push(candId);
-                else homeless.push(candId);
-            });
+                unassigned.delete(seed);
 
-            // 4. Initial check for oversized groups (6+) to split
-            let balancedGroups = [];
-            groups.forEach(g => {
-                if(g.length <= 5) balancedGroups.push(g);
-                else {
-                    let rem = [...g];
-                    while(rem.length > 5) {
-                        const splitSize = Math.ceil(rem.length / 2);
-                        balancedGroups.push(rem.splice(0, splitSize));
-                    }
-                    balancedGroups.push(rem);
-                }
-            });
-            groups = balancedGroups;
+                const partner = pickBestPartner(seed);
+                const group = [seed];
 
-            // 5. Final Rebalancing (CRITICAL FIX for < 3)
-            let iterations = 0;
-            const MAX_ITERATIONS = 100;
-            
-            // Add initial homeless
-            if (homeless.length > 0) {
-                groups.sort((a,b) => a.length - b.length);
-                const smallG = groups.find(g => g.length < MAX_SIZE);
-                if(smallG) smallG.push(...homeless);
-                else groups.push(homeless);
-                homeless = [];
-            }
-
-            while(iterations < MAX_ITERATIONS) {
-                const smallGroups = groups.filter(g => g.length < 3);
-                if (smallGroups.length === 0) break; 
-
-                let pool = [];
-                for(let i=groups.length-1; i>=0; i--) {
-                    if(groups[i].length < 3) {
-                        pool.push(...groups[i]);
-                        groups.splice(i, 1);
-                    }
+                if (partner) {
+                    group.push(partner);
+                    unassigned.delete(partner);
                 }
 
-                for(const pid of pool) {
-                    groups.sort((a,b) => a.length - b.length);
-                    const target = groups.find(g => g.length < 5);
-                    
-                    if(target) {
-                        target.push(pid);
-                    } else {
-                        const richGroup = groups.find(g => g.length >= 5);
-                        if(richGroup) {
-                             const stolen = richGroup.splice(0, 2);
-                             groups.push([pid, ...stolen]);
-                        } else {
-                             if(groups.length > 0) groups[0].push(pid);
-                             else groups.push([pid]);
+                // grow to IDEAL_SIZE (4)
+                while (group.length < IDEAL_SIZE && unassigned.size > 0) {
+                    let bestCand = null;
+                    let bestFit = -Infinity;
+
+                    for (const cand of unassigned) {
+                        // カテゴリ距離ゲート：極力 dist<=2 まで
+                        const avgDist = (() => {
+                            const c = byId[cand].category;
+                            let sum = 0;
+                            group.forEach(m => sum += categoryDistance(c, byId[m].category));
+                            return sum / group.length;
+                        })();
+                        if (avgDist >= 2.5) continue; // dist=3に寄りすぎる候補は弾く
+
+                        const sc = fitScore(cand, group);
+                        if (sc > bestFit) { bestFit = sc; bestCand = cand; }
+                    }
+
+                    // どうしても見つからない場合はゲートを緩めて1人だけ入れる
+                    if (!bestCand) {
+                        for (const cand of unassigned) {
+                            const sc = fitScore(cand, group);
+                            if (sc > bestFit) { bestFit = sc; bestCand = cand; }
                         }
                     }
+
+                    if (!bestCand) break;
+                    group.push(bestCand);
+                    unassigned.delete(bestCand);
                 }
-                
-                for (let i = groups.length - 1; i >= 0; i--) {
-                    if (groups[i].length > 5) {
-                        const bigGroup = groups[i];
-                        groups.splice(i, 1);
-                        const half = Math.ceil(bigGroup.length / 2);
-                        groups.push(bigGroup.slice(0, half));
-                        groups.push(bigGroup.slice(half));
-                    }
-                }
-                iterations++;
+
+                groups.push(group);
             }
-            return groups;
+
+            // -------------------------------
+            // Fix sizes: ensure 3-5
+            // -------------------------------
+            // If some groups are size 1-2, pool and reassign
+            let pool = [];
+            for (let i = groups.length - 1; i >= 0; i--) {
+                if (groups[i].length < MIN_SIZE) {
+                    pool.push(...groups[i]);
+                    groups.splice(i, 1);
+                }
+            }
+            // Put pool back into best-fit groups first
+            for (const pid of pool) {
+                // try put into group with space and minimal avg dist
+                let bestIdx = -1;
+                let best = -Infinity;
+                for (let i = 0; i < groups.length; i++) {
+                    if (groups[i].length >= MAX_SIZE) continue;
+                    const sc = fitScore(pid, groups[i]) - teamCohesionPenalty([...groups[i], pid]);
+                    if (sc > best) { best = sc; bestIdx = i; }
+                }
+                if (bestIdx >= 0) groups[bestIdx].push(pid);
+                else groups.push([pid]); // should be rare
+            }
+            // If still <3 groups exist, merge into closest group
+            for (let i = groups.length - 1; i >= 0; i--) {
+                if (groups[i].length < MIN_SIZE) {
+                    const small = groups.splice(i, 1)[0];
+                    let bestIdx = -1;
+                    let best = -Infinity;
+                    for (let j = 0; j < groups.length; j++) {
+                        if (groups[j].length + small.length > MAX_SIZE) continue;
+                        const merged = [...groups[j], ...small];
+                        const sc = teamObjective(merged);
+                        if (sc > best) { best = sc; bestIdx = j; }
+                    }
+                    if (bestIdx >= 0) groups[bestIdx].push(...small);
+                    else groups.push(small);
+                }
+            }
+            // Split oversized groups
+            for (let i = groups.length - 1; i >= 0; i--) {
+                if (groups[i].length > MAX_SIZE) {
+                    const g = groups.splice(i, 1)[0];
+                    while (g.length > MAX_SIZE) groups.push(g.splice(0, IDEAL_SIZE));
+                    if (g.length) groups.push(g);
+                }
+            }
+
+            // -------------------------------
+            // (D) Local search refinement:
+            // swap / move to improve objective (focus on category cohesion)
+            // -------------------------------
+            let bestGroups = groups.map(g => [...g]);
+            let bestObj = totalObjective(bestGroups);
+
+            const MAX_IT = 2500;
+            const randInt = (n) => Math.floor(Math.random() * n);
+
+            for (let it = 0; it < MAX_IT; it++) {
+                // choose operation: 0 swap, 1 move
+                const op = Math.random() < 0.65 ? 0 : 1;
+
+                const gA = randInt(bestGroups.length);
+                let gB = randInt(bestGroups.length);
+                if (bestGroups.length > 1) while (gB === gA) gB = randInt(bestGroups.length);
+
+                const A = bestGroups[gA];
+                const B = bestGroups[gB];
+                if (!A || !B || A.length === 0 || B.length === 0) continue;
+
+                let newGroups = bestGroups.map(g => [...g]);
+
+                if (op === 0) {
+                    // swap one member
+                    const i = randInt(A.length);
+                    const j = randInt(B.length);
+                    const aId = A[i], bId = B[j];
+
+                    newGroups[gA][i] = bId;
+                    newGroups[gB][j] = aId;
+
+                    // size constraints always preserved in swap
+                } else {
+                    // move one member A -> B
+                    if (A.length <= MIN_SIZE) continue;
+                    if (B.length >= MAX_SIZE) continue;
+
+                    const i = randInt(A.length);
+                    const aId = A[i];
+
+                    newGroups[gA].splice(i, 1);
+                    newGroups[gB].push(aId);
+
+                    if (newGroups[gA].length < MIN_SIZE) continue;
+                }
+
+                // remove empties just in case
+                newGroups = newGroups.filter(g => g.length > 0);
+
+                // validate sizes
+                if (newGroups.some(g => g.length < MIN_SIZE || g.length > MAX_SIZE)) continue;
+
+                const obj = totalObjective(newGroups);
+                if (obj > bestObj) {
+                    bestObj = obj;
+                    bestGroups = newGroups;
+                }
+            }
+
+            return bestGroups;
         };
 
         const generateMockStudents = (count) => {
@@ -455,7 +719,7 @@
         // --- CSV Import Component (Fixed NaN issue) ---
         const DataImporter = ({ onImport }) => {
             const [text, setText] = useState('');
-            
+
             const handleImport = () => {
                 const rows = text.trim().split('\n');
                 const data = [];
@@ -464,7 +728,7 @@
                     if(cols.length >= 4) {
                         const classId = parseInt(cols[1]);
                         const studentNumber = parseInt(cols[2]);
-                        
+
                         if (!isNaN(classId) && !isNaN(studentNumber)) {
                             data.push({
                                 id: cols[0], // Email as ID
@@ -534,7 +798,7 @@
                                     const student = students.find(s => s.classId === cls && s.studentNumber === num);
                                     const isRegistered = !!student;
                                     let isSubmitted = false;
-                                    
+
                                     // Status Logic:
                                     // INPUT: Comment exists or Topics selected
                                     // CHECK: 30 or more actions (votes + skips) recorded
@@ -543,7 +807,7 @@
                                     } else if(phase === PHASE.CHECK) {
                                         isSubmitted = student && student.votes && Object.keys(student.votes).length >= 30;
                                     }
-                                    
+
                                     return (
                                         <button 
                                             key={num} 
@@ -726,7 +990,7 @@
                                 )}
                             </div>
                         </section>
-                        
+
                         <section>
                             <label className={sectionTitleClass}><Sparkles size={20} className="text-purple-500"/> トピックカードを選択（最大5つ）<span className="ml-auto text-xs font-bold text-blue-500 bg-blue-50 px-2 py-1 rounded-full">{(formData.topics||[]).length}/5</span></label>
                             <div className="flex flex-wrap gap-2">{TOPIC_TAGS.map(t => (<button key={t.id} onClick={() => toggleSelection('topics', t.id)} className={`text-xs px-4 py-2 rounded-lg border font-bold transition-all duration-200 ${(formData.topics||[]).includes(t.id) ? getTagStyle(t.id, true) : getTagStyle(t.id, false)}`}>{t.name}</button>))}</div>
@@ -749,6 +1013,37 @@
             );
         };
 
+        // --- Logic: Matching (Strict 3-5 Members + Skill Diversity) ---
+        const getRecommendedCandidates = (currentUser, allStudents) => {
+            if (!currentUser || !allStudents) return [];
+
+            // Filter out self AND already voted users
+            const votedIds = Object.keys(currentUser.votes || {});
+            const candidates = allStudents.filter(s => s.id !== currentUser.id && !votedIds.includes(s.id));
+
+            const scoredCandidates = candidates.map(student => {
+                let score = 0;
+                if (student.category && student.category === currentUser.category) score += 3;
+                const cTopics = student.topics || [];
+                const myTopics = currentUser.topics || [];
+                const commonTopics = cTopics.filter(t => myTopics.includes(t));
+                score += commonTopics.length * 5;
+                const cApps = student.approaches || [];
+                const myApps = currentUser.approaches || [];
+                const commonApps = cApps.filter(a => myApps.includes(a));
+                score += commonApps.length * 2;
+                return { ...student, affinityScore: score };
+            });
+            scoredCandidates.sort((a, b) => b.affinityScore - a.affinityScore);
+
+            // Limit to remaining checks needed (Total 30)
+            const currentVoteCount = votedIds.length;
+            const remainingCount = Math.max(0, 30 - currentVoteCount);
+
+            const topSlice = Math.min(remainingCount, scoredCandidates.length);
+            return scoredCandidates.slice(0, topSlice);
+        };
+
         const CardStack = ({ currentUser, students, onVote }) => {
             const [currentIndex, setCurrentIndex] = useState(0);
             const [direction, setDirection] = useState(null);
@@ -761,12 +1056,12 @@
             const handleSwipe = (dir) => {
                 if (!currentStudent || direction || (dir === 'right' && !hasSelection)) return;
                 setDirection(dir);
-                
+
                 // [FIX] Always record vote (even skip) to progress status
                 // Also ensure we are recording a valid vote object
                 const voteData = dir === 'right' ? selections : { skipped: true };
                 onVote(currentStudent.id, voteData);
-                
+
                 setTimeout(() => { setDirection(null); setCurrentIndex(prev => prev + 1); }, 400);
             };
             if (currentIndex >= candidates.length) return <div className="flex flex-col items-center justify-center h-[70vh] text-center p-6"><div className="bg-green-100 p-6 rounded-full mb-6 animate-bounce"><CheckCircle size={64} className="text-green-600" /></div><h2 className="text-2xl font-bold text-gray-800 mb-2">チェック完了！</h2><p className="text-gray-500">先生のマッチング開始をお待ちください。</p></div>;
@@ -805,6 +1100,7 @@
                 </div>
             );
         };
+
         const ModernResultView = ({ currentUser, students, groups, isPublished }) => {
             // [NEW] Modal State for Member Details
             const [selectedMember, setSelectedMember] = useState(null);
@@ -815,7 +1111,7 @@
             // Fix for object/array structure difference
             const myGroupMemberIds = myGroupData ? (myGroupData.members || myGroupData) : [];
             const myGroupMembers = myGroupMemberIds.map(id => students.find(s => s.id === id)).filter(Boolean);
-            
+
             return (
                 <div className="min-h-screen bg-gradient-to-b from-blue-50 to-white p-6 pt-12 relative">
                     <div className="max-w-2xl mx-auto">
@@ -862,7 +1158,7 @@
                                             </div>
                                             <div className="p-6 max-h-[60vh] overflow-y-auto">
                                                 <h3 className="text-xl font-bold mb-1">{selectedMember.name} <span className="text-sm text-gray-500 font-normal ml-2">{selectedMember.classId}組 {selectedMember.studentNumber}番</span></h3>
-                                                
+
                                                 {selectedMember.theme && (
                                                     <div className="mb-4 mt-4">
                                                         <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1 flex items-center gap-1"><Lightbulb size={12}/> 今考えている題材</h4>
@@ -997,12 +1293,12 @@
                 if(currentUserData.role === 'teacher' || currentUserData.role === 'admin') { alert("【確認】管理者のため、データは保存されません（プレビューモード）"); return; }
                 await updateDoc(doc(db, 'users', user.email), { ...data, updatedAt: new Date() });
             };
-            
+
             // [FIX] Correct Vote Handling: Use setDoc with merge to avoid overwriting entire map
             const handleVote = async (targetId, selections) => {
                 if(!user) return;
                 if(currentUserData.role === 'teacher' || currentUserData.role === 'admin') { console.log("Teacher vote ignored"); return; }
-                
+
                 const userRef = doc(db, 'users', user.email);
                 // Dynamically update the specific key in the 'votes' map
                 await setDoc(userRef, { votes: { [targetId]: selections } }, { merge: true });
@@ -1042,7 +1338,8 @@
                 const result = runWeightedMatchingAlgorithm(students, allVotes);
                 const firestoreData = result.map(group => {
                     const members = group;
-                    const metrics = calculateTeamMetrics(members.map(mid => students.find(s => s.id === mid)).filter(Boolean));
+                    const memberObjs = members.map(mid => students.find(s => s.id === mid)).filter(Boolean);
+                    const metrics = calculateTeamMetrics(memberObjs, students, allVotes);
                     return { members, metrics };
                 });
                 await setDoc(doc(db, 'system', 'groups'), { list: firestoreData });
@@ -1064,9 +1361,9 @@
                     const teamName = `TEAM ${groupIdx + 1}`;
                     const groupMembers = groupData.members || groupData;
                     const metrics = groupData.metrics || {};
-                    
+
                     const teamEmails = groupMembers.map(sid => { const s = students.find(st => st.id === sid); return s ? s.email : ''; }).filter(e => e).join(', ');
-                    
+
                     teamRows.push([
                         teamName, 
                         `"${teamEmails}"`, 
@@ -1126,7 +1423,7 @@
                             <div className="flex items-center gap-3"><span className="text-xs font-bold px-3 py-1 bg-gray-100 rounded-full text-gray-600">{phase}</span><button onClick={handleLogout} className="text-gray-400 hover:text-gray-600"><LogOut size={20}/></button></div>
                         </div>
                     </header>
-                    
+
                     {isTeacher && (
                         <TeacherPanel 
                             phase={phase} students={students} studentCount={students.length} 
@@ -1150,7 +1447,7 @@
                                 <ModernResultView currentUser={currentUserData} students={students} groups={groups} isPublished={phase === PHASE.PUBLISH} />
                             </div>
                         )}
-                        
+
                         {isTeacher && (phase === PHASE.MATCHING || phase === PHASE.PUBLISH) && (
                             <div className="max-w-6xl mx-auto p-8 border-t border-gray-200 mt-8">
                                 <h3 className="font-black text-2xl mb-6 text-gray-800">全チーム一覧 (管理者用)</h3>
@@ -1165,18 +1462,21 @@
                                                 <span>Score: {metrics.score}</span>
                                                 {metrics.mutualPairs > 0 && <span className="text-pink-500 flex items-center gap-0.5"><Heart size={10} fill="currentColor"/>{metrics.mutualPairs}</span>}
                                             </div>
-                                            
+
                                             <div className="flex justify-between items-center mb-4 pb-2 border-b border-gray-100">
                                                 <h4 className="font-bold text-gray-700">TEAM {idx + 1}</h4>
                                                 <span className="bg-blue-100 text-blue-700 text-xs font-bold px-2 py-1 rounded-md">{group.length} Members</span>
                                             </div>
                                             <ul className="space-y-3">{group.map(sid => { const s = students.find(st => st.id === sid); const cat = CATEGORIES.find(c => c.id === s?.category) || CATEGORIES[0]; return (<li key={sid} className="flex items-center gap-3"><div className={`w-8 h-8 rounded-full bg-gradient-to-br ${cat?.color} flex items-center justify-center text-white text-xs font-bold`}>{s?.name.charAt(0)}</div><div><div className="font-bold text-sm text-gray-800">{s?.name}</div><div className="text-[10px] text-gray-400">{cat?.name}</div></div></li>)})}</ul>
-                                            
+
                                             {/* Metrics Detail */}
                                             <div className="mt-4 pt-3 border-t border-gray-50 flex justify-between text-[10px] text-gray-400">
                                                 <div title="結束力">Con: {metrics.connection}</div>
                                                 <div title="共通関心">Int: {metrics.interest}</div>
                                                 <div title="多様性">Div: {metrics.diversity}</div>
+                                                <div title="カテゴリ純度 (dominant/size)">Pur: {metrics.purity}</div>
+                                                <div title="カテゴリ距離平均 (0が理想)">d̄: {metrics.avgCatDistance}</div>
+                                                {metrics.crossFieldPairs > 0 && <div title="別分野ペア数" className="text-red-500 font-bold">XField: {metrics.crossFieldPairs}</div>}
                                             </div>
                                         </div>
                                     )})} 
