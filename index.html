@@ -631,8 +631,16 @@
                     setStudents(loadedStudents);
                 });
 
+                // [FIX] Convert object array back to nested array for app usage
                 const unsubGroups = onSnapshot(doc(db, 'system', 'groups'), (doc) => {
-                    if(doc.exists()) setGroups(doc.data().list || []);
+                    if(doc.exists()) {
+                        const rawList = doc.data().list || [];
+                        // Firestore stores as [{members:[]}, ...], convert back to [[], ...]
+                        const formattedGroups = rawList.map(item => item.members || item); 
+                        setGroups(formattedGroups);
+                    } else {
+                        setGroups([]);
+                    }
                 });
 
                 return () => { unsubSystem(); unsubStudents(); unsubGroups(); };
@@ -693,7 +701,11 @@
                 const allVotes = {};
                 students.forEach(s => { if(s.votes) allVotes[s.id] = s.votes; });
                 const result = runWeightedMatchingAlgorithm(students, allVotes);
-                await setDoc(doc(db, 'system', 'groups'), { list: result });
+                
+                // [FIX] Firestore doesn't support nested arrays. Convert to object array.
+                const firestoreData = result.map(group => ({ members: group }));
+                
+                await setDoc(doc(db, 'system', 'groups'), { list: firestoreData });
             };
 
             const handlePublish = async () => {
