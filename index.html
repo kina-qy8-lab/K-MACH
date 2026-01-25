@@ -925,27 +925,35 @@
                 return () => clearTimeout(timer);
             }, []);
 
+            // 1. Auth Listener
             useEffect(() => {
-                const unsubscribe = onAuthStateChanged(auth, async (u) => {
-                    if (u) {
-                        setUser(u);
-                        const userDoc = await getDoc(doc(db, 'users', u.email));
-                        if (userDoc.exists()) {
-                            setCurrentUserData(userDoc.data());
-                        } else {
-                            setErrorMsg("このアカウントは登録されていません。管理者に問い合わせてください。");
-                            signOut(auth);
-                        }
-                    } else {
-                        setUser(null);
-                        setCurrentUserData(null);
-                    }
+                const unsubscribe = onAuthStateChanged(auth, (u) => {
+                    setUser(u);
                 });
                 return () => unsubscribe();
             }, []);
 
+            // 2. User Data Listener
             useEffect(() => {
-                if (!user || !currentUserData) return;
+                if (!user) {
+                    setCurrentUserData(null);
+                    return;
+                }
+                const unsubUser = onSnapshot(doc(db, 'users', user.email), (docSnap) => {
+                    if (docSnap.exists()) {
+                        setCurrentUserData(docSnap.data());
+                    } else {
+                        setErrorMsg("このアカウントは登録されていません。管理者に問い合わせてください。");
+                        signOut(auth);
+                    }
+                }, (error) => {
+                     console.error("User listener error:", error);
+                });
+                return () => unsubUser();
+            }, [user]);
+
+            useEffect(() => {
+                if (!user) return;
                 const unsubSystem = onSnapshot(doc(db, 'system', 'config'), (doc) => {
                     if (doc.exists()) setPhase(doc.data().phase || PHASE.INPUT);
                 });
@@ -953,7 +961,6 @@
                     const loadedStudents = snapshot.docs.map(d => ({ id: d.id, ...d.data() })).filter(u => u.role !== 'teacher' && u.role !== 'admin');
                     setStudents(loadedStudents);
                 });
-                // [FIX] Convert object array back to nested array for app usage
                 const unsubGroups = onSnapshot(doc(db, 'system', 'groups'), (doc) => {
                     if(doc.exists()) {
                         const rawList = doc.data().list || [];
@@ -970,7 +977,7 @@
                     }
                 });
                 return () => { unsubSystem(); unsubStudents(); unsubGroups(); };
-            }, [user, currentUserData]);
+            }, [user]);
 
             const handleLogin = async () => {
                 try {
@@ -1137,12 +1144,13 @@
                                 {phase === PHASE.CHECK && <CardStack currentUser={currentUserData} students={students} onVote={handleVote} />}
                             </div>
                         )}
-                        {(phase === PHASE.MATCHING || phase === PHASE.PUBLISH) && (
-                            <div className={isTeacher ? "border-4 border-green-500 rounded-xl m-4 relative overflow-hidden" : ""}>
-                                {isTeacher && <div className="absolute top-0 left-0 bg-green-500 text-white px-3 py-1 text-xs font-bold rounded-br-xl z-50 flex items-center gap-1"><Eye size={12}/> 生徒画面プレビュー</div>}
-                                <ModernResultView currentUser={currentUserData} students={students} groups={groups} isPublished={phase === PHASE.PUBLISH || isTeacher} />
+                        {/* [MODIFIED] Hide preview for teacher completely during MATCHING and PUBLISH phases */}
+                        {!isTeacher && (phase === PHASE.MATCHING || phase === PHASE.PUBLISH) && (
+                            <div>
+                                <ModernResultView currentUser={currentUserData} students={students} groups={groups} isPublished={phase === PHASE.PUBLISH} />
                             </div>
                         )}
+                        
                         {isTeacher && (phase === PHASE.MATCHING || phase === PHASE.PUBLISH) && (
                             <div className="max-w-6xl mx-auto p-8 border-t border-gray-200 mt-8">
                                 <h3 className="font-black text-2xl mb-6 text-gray-800">全チーム一覧 (管理者用)</h3>
