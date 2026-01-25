@@ -60,16 +60,21 @@
 
         // --- Constants ---
         const CATEGORIES = [
+            // 自然科学分野
             { id: 'NAT_MAT', group: '自然科学分野', name: '物質・材料', color: 'from-blue-500 to-cyan-400' },
             { id: 'NAT_BIO', group: '自然科学分野', name: '生命・生物', color: 'from-green-500 to-emerald-400' },
             { id: 'NAT_EAR', group: '自然科学分野', name: '地球・環境', color: 'from-teal-500 to-green-400' },
             { id: 'NAT_PHY', group: '自然科学分野', name: '物理・工学', color: 'from-indigo-500 to-blue-400' },
             { id: 'NAT_INF', group: '自然科学分野', name: '数理・情報', color: 'from-violet-500 to-purple-400' },
+
+            // 社会科学分野
             { id: 'SOC_ECO', group: '社会科学分野', name: '経済・産業', color: 'from-orange-500 to-amber-400' },
             { id: 'SOC_PUB', group: '社会科学分野', name: '政策・行政・公共', color: 'from-red-500 to-rose-400' },
             { id: 'SOC_EDU', group: '社会科学分野', name: '教育・心理', color: 'from-pink-500 to-rose-400' },
             { id: 'SOC_SOC', group: '社会科学分野', name: '社会・文化', color: 'from-fuchsia-500 to-pink-400' },
             { id: 'SOC_INT', group: '社会科学分野', name: '国際・地理', color: 'from-yellow-500 to-orange-400' },
+
+            // 人文科学分野
             { id: 'HUM_HIS', group: '人文科学分野', name: '歴史・地域史', color: 'from-amber-600 to-yellow-500' },
             { id: 'HUM_LNG', group: '人文科学分野', name: '言語・コミュニケーション', color: 'from-cyan-600 to-blue-500' },
             { id: 'HUM_LIT', group: '人文科学分野', name: '文学・物語', color: 'from-emerald-600 to-teal-500' },
@@ -77,27 +82,34 @@
             { id: 'HUM_ART', group: '人文科学分野', name: '芸術・デザイン', color: 'from-rose-600 to-pink-500' },
         ];
 
+        // Updated TOPIC_TAGS with correct data and ID ranges
+        // T01-T28: Natural (Blue style)
+        // T29-T48: Social (Orange style)
+        // T49-T57: Humanities (Rose style)
         const TOPIC_TAGS = [
-            { id: 'T01', name: '力学（身体/スポーツ）' }, { id: 'T02', name: '力学（構造/滑空）' },
+            { id: 'T01', name: '力学（身体の動き/スポーツ科学）' }, { id: 'T02', name: '力学（構造/滑空/浮力）' },
             { id: 'T03', name: '地震・防災' }, { id: 'T04', name: '建築' }, { id: 'T05', name: '紙飛行機' },
-            { id: 'T06', name: 'スポーツ（動作解析）' }, { id: 'T07', name: 'スポーツ（道具）' },
+            { id: 'T06', name: 'スポーツ（フォーム/動作/戦術）' }, { id: 'T07', name: 'スポーツ（ケガ/道具）' },
             { id: 'T08', name: 'モータースポーツ' }, { id: 'T09', name: '音・色' },
-            { id: 'T10', name: '物質（成分/材料）' }, { id: 'T11', name: '薬（成分）' },
+            { id: 'T10', name: '物質（成分/効果/材料）' }, { id: 'T11', name: '薬' },
             { id: 'T12', name: '化粧品' }, { id: 'T13', name: '環境（光害/CO2）' },
             { id: 'T14', name: '食品（成分/分析）' }, { id: 'T15', name: '植物（生育/土壌）' },
-            { id: 'T16', name: '生物（昆虫/微生物）' }, { id: 'T17', name: '微生物（発酵）' },
+            { id: 'T16', name: '生物（昆虫/微生物/外来種）' }, { id: 'T17', name: '微生物（発酵/培養）' },
             { id: 'T18', name: 'タンパク質酵素' }, { id: 'T19', name: '宇宙・天文' },
             { id: 'T20', name: '天気' }, { id: 'T21', name: '海' }, { id: 'T22', name: 'ヒートアイランド' },
-            { id: 'T23', name: '定義・法則・数式' }, { id: 'T24', name: '解析（画像/動画）' },
+            { id: 'T23', name: '定義・法則・数式' }, { id: 'T24', name: '解析（画像/音声/動画）' },
             { id: 'T25', name: 'シミュレーション' }, { id: 'T26', name: '統計・データ' },
-            { id: 'T27', name: '教育×ICT' }, { id: 'T28', name: 'AI・生成AI' }, { id: 'T29', name: '株・経済' },
-            { id: 'T30', name: 'SDGs' }, { id: 'T31', name: '安全保障' }, { id: 'T32', name: '国際情勢' },
+            { id: 'T27', name: '教育×ICT' }, { id: 'T28', name: 'AI・生成AI' }, 
+            
+            { id: 'T29', name: '株・為替' }, { id: 'T30', name: 'SDGs' }, { id: 'T31', name: '安全保障' }, { id: 'T32', name: '国際情勢' },
             { id: 'T33', name: '文化と社会' }, { id: 'T34', name: '法律・校則' }, { id: 'T35', name: '地域の特色' },
             { id: 'T36', name: '経済活動' }, { id: 'T37', name: '環境と満足度' }, { id: 'T38', name: '映画・芸術' },
             { id: 'T39', name: '価格と価値' }, { id: 'T40', name: '効率化' }, { id: 'T41', name: '行動心理' },
             { id: 'T42', name: '観光' }, { id: 'T43', name: '認知バイアス' }, { id: 'T44', name: 'マーケティング' },
             { id: 'T45', name: '子ども' }, { id: 'T46', name: 'SNS・ネット' }, { id: 'T47', name: 'メディア' },
-            { id: 'T48', name: '嘘・フェイク' }, { id: 'T49', name: '学習効果' }, { id: 'T50', name: '色彩心理' },
+            { id: 'T48', name: '嘘・フェイク' }, 
+
+            { id: 'T49', name: '学習効果' }, { id: 'T50', name: '色彩心理' },
             { id: 'T51', name: '睡眠・健康' }, { id: 'T52', name: 'ストレス' }, { id: 'T53', name: 'モチベーション' },
             { id: 'T54', name: 'デザイン' }, { id: 'T55', name: '写真・映像' }, { id: 'T56', name: '歴史・背景' },
             { id: 'T57', name: '言語・方言' }
@@ -126,6 +138,27 @@
         const MOCK_MASTER_DATA = [
             { id: 'student_001', email: 'student1@example.com', classId: 3, studentNumber: 15, name: '田中 陽翔', category: 'NAT_BIO', theme: '地元の河川における外来種が生態系に与える影響調査' }
         ];
+
+        // --- Logic: Tag Coloring ---
+        const getTagStyle = (id, isSelected = false) => {
+            const num = parseInt(id.substring(1));
+            // Natural: T01-T28 (Blue/Cyan)
+            if (num <= 28) {
+                return isSelected 
+                    ? 'bg-blue-600 border-blue-600 text-white' 
+                    : 'bg-blue-50 border-blue-300 text-blue-800 hover:bg-blue-100';
+            }
+            // Social: T29-T48 (Orange)
+            if (num <= 48) {
+                return isSelected 
+                    ? 'bg-orange-500 border-orange-500 text-white' 
+                    : 'bg-orange-50 border-orange-300 text-orange-800 hover:bg-orange-100';
+            }
+            // Humanities: T49-T57 (Rose/Pink)
+            return isSelected 
+                ? 'bg-rose-500 border-rose-500 text-white' 
+                : 'bg-rose-50 border-rose-300 text-rose-800 hover:bg-rose-100';
+        };
 
         // --- Logic: Matching (Strict 3-5 Members + Skill Diversity) ---
         const getRecommendedCandidates = (currentUser, allStudents) => {
@@ -634,7 +667,7 @@
                         
                         <section>
                             <label className={sectionTitleClass}><Sparkles size={20} className="text-purple-500"/> トピックカードを選択（最大5つ）<span className="ml-auto text-xs font-bold text-blue-500 bg-blue-50 px-2 py-1 rounded-full">{(formData.topics||[]).length}/5</span></label>
-                            <div className="flex flex-wrap gap-2">{TOPIC_TAGS.map(t => (<button key={t.id} onClick={() => toggleSelection('topics', t.id)} className={`text-xs px-4 py-2 rounded-lg border font-bold transition-all duration-200 ${(formData.topics||[]).includes(t.id) ? 'bg-blue-600 border-blue-600 text-white shadow-md transform scale-105' : 'bg-white border-gray-200 text-gray-600 hover:border-blue-300 hover:bg-gray-50'}`}>{t.name}</button>))}</div>
+                            <div className="flex flex-wrap gap-2">{TOPIC_TAGS.map(t => (<button key={t.id} onClick={() => toggleSelection('topics', t.id)} className={`text-xs px-4 py-2 rounded-lg border font-bold transition-all duration-200 ${(formData.topics||[]).includes(t.id) ? getTagStyle(t.id, true) : getTagStyle(t.id, false)}`}>{t.name}</button>))}</div>
                         </section>
                         <section>
                             <label className={sectionTitleClass}><Settings size={20} className="text-green-500"/> アプローチ（複数可）</label>
@@ -658,32 +691,22 @@
             const [currentIndex, setCurrentIndex] = useState(0);
             const [direction, setDirection] = useState(null);
             const [selections, setSelections] = useState({ direction: false, skill: false, love: false });
-            
             const candidates = useMemo(() => getRecommendedCandidates(currentUser, students), [students.length, currentUser.id]);
             const currentStudent = candidates[currentIndex];
-            
             useEffect(() => { setSelections({ direction: false, skill: false, love: false }); }, [currentIndex]);
             const toggleSelection = (type) => setSelections(prev => ({ ...prev, [type]: !prev[type] }));
             const hasSelection = useMemo(() => Object.values(selections).some(v => v), [selections]);
-            
             const handleSwipe = (dir) => {
                 if (!currentStudent || direction || (dir === 'right' && !hasSelection)) return;
                 setDirection(dir);
-                
-                // [FIX] Always record vote (even skip) to progress status
-                const voteData = dir === 'right' ? selections : { skipped: true };
-                onVote(currentStudent.id, voteData);
-                
+                if (dir === 'right') onVote(currentStudent.id, selections);
                 setTimeout(() => { setDirection(null); setCurrentIndex(prev => prev + 1); }, 400);
             };
-
             if (currentIndex >= candidates.length) return <div className="flex flex-col items-center justify-center h-[70vh] text-center p-6"><div className="bg-green-100 p-6 rounded-full mb-6 animate-bounce"><CheckCircle size={64} className="text-green-600" /></div><h2 className="text-2xl font-bold text-gray-800 mb-2">チェック完了！</h2><p className="text-gray-500">先生のマッチング開始をお待ちください。</p></div>;
-
             const categoryData = CATEGORIES.find(c => c.id === currentStudent.category) || CATEGORIES[0];
             let cardClass = "absolute inset-0 bg-white rounded-3xl shadow-2xl border border-gray-100 overflow-hidden flex flex-col transition-all duration-500 ease-out";
             if (direction === 'left') cardClass += " transform -translate-x-[150%] -rotate-12 opacity-0";
             else if (direction === 'right') cardClass += " transform translate-x-[150%] rotate-12 opacity-0";
-
             return (
                 <div className="flex flex-col items-center justify-center min-h-[85vh] p-4 overflow-hidden relative">
                     <div className="w-full max-w-md aspect-[3/4] relative">
@@ -697,30 +720,36 @@
                             </div>
                             <div className="flex-1 p-6 flex flex-col gap-4 overflow-y-auto pb-32">
                                 {currentStudent.theme && <div className="mb-2"><h4 className="text-sm font-bold text-gray-800 mb-2 flex items-center gap-2 border-b border-gray-100 pb-1"><Lightbulb size={16} className="text-yellow-500"/> 今考えている題材</h4><div className="bg-yellow-50/50 p-4 rounded-xl border border-yellow-100 font-bold text-gray-800 leading-snug shadow-sm">{currentStudent.theme}</div></div>}
-                                <div><h4 className="text-sm font-bold text-gray-800 mb-2 flex items-center gap-2 border-b border-gray-100 pb-1"><Sparkles size={16} className="text-purple-500"/> トピック</h4><div className="flex flex-wrap gap-2">{currentStudent.topics?.map(tid => <span key={tid} className="bg-blue-50 text-blue-700 px-2 py-1 rounded-lg text-xs font-bold border border-blue-100">{TOPIC_TAGS.find(t=>t.id===tid)?.name}</span>)}</div></div>
+                                <div><h4 className="text-sm font-bold text-gray-800 mb-2 flex items-center gap-2 border-b border-gray-100 pb-1"><Sparkles size={16} className="text-purple-500"/> トピック</h4><div className="flex flex-wrap gap-2">{currentStudent.topics?.map(tid => <span key={tid} className={`px-2 py-1 rounded-lg text-xs font-bold border ${getTagStyle(tid, false)}`}>{TOPIC_TAGS.find(t=>t.id===tid)?.name}</span>)}</div></div>
                                 <div><h4 className="text-sm font-bold text-gray-800 mb-2 flex items-center gap-2 border-b border-gray-100 pb-1"><Settings size={16} className="text-green-500"/> アプローチ</h4><div className="flex flex-wrap gap-2">{currentStudent.approaches?.map(aid => { const a = APPROACH_TAGS.find(t=>t.id===aid); return a ? <div key={aid} className="bg-green-50 text-green-700 px-2 py-1 rounded-lg text-xs font-bold border border-green-100 flex items-center gap-1"><span>{a.icon}</span><span>{a.name}</span></div> : null; })}</div></div>
                                 <div><h4 className="text-sm font-bold text-gray-800 mb-2 flex items-center gap-2 border-b border-gray-100 pb-1"><Zap size={16} className="text-orange-500"/> スキル</h4><div className="flex flex-wrap gap-2">{currentStudent.skills?.map(s => <span key={s} className="bg-purple-50 text-purple-700 px-2 py-1 rounded-lg text-xs font-bold border border-purple-100">{s}</span>)}</div></div>
                                 <div className="mt-2"><div className="text-sm font-bold text-gray-800 mb-2 flex items-center gap-2 border-b border-gray-100 pb-1"><Smile size={16} className="text-pink-500"/> ひとこと</div><div className="bg-gray-50 p-4 rounded-xl border border-gray-100 relative"><p className="text-sm text-gray-600 italic">"{currentStudent.comment}"</p></div></div>
                             </div>
                             <div className="absolute bottom-0 left-0 right-0 bg-white/95 backdrop-blur-sm border-t p-4 pb-6 flex gap-2 justify-center">
-                                <button onClick={() => handleSwipe('left')} className={`flex-1 py-3 rounded-xl flex flex-col items-center transition border-2 border-gray-200 text-gray-400 hover:bg-red-50 hover:text-red-500 hover:border-red-200`}><X size={20} /><span className="text-[10px] font-bold mt-1">スキップ</span></button>
                                 <button onClick={() => toggleSelection('direction')} className={`flex-1 py-3 rounded-xl flex flex-col items-center transition border-2 ${selections.direction ? 'bg-green-50 border-green-500 text-green-700' : 'bg-gray-50 border-transparent text-gray-400 hover:bg-gray-100'}`}><CheckCircle size={20} className={selections.direction ? 'fill-current' : ''}/><span className="text-[10px] font-bold mt-1">方向性</span></button>
                                 <button onClick={() => toggleSelection('skill')} className={`flex-1 py-3 rounded-xl flex flex-col items-center transition border-2 ${selections.skill ? 'bg-blue-50 border-blue-500 text-blue-700' : 'bg-gray-50 border-transparent text-gray-400 hover:bg-gray-100'}`}><Zap size={20} className={selections.skill ? 'fill-current' : ''}/><span className="text-[10px] font-bold mt-1">スキル</span></button>
                                 <button onClick={() => toggleSelection('love')} className={`flex-1 py-3 rounded-xl flex flex-col items-center transition border-2 ${selections.love ? 'bg-pink-50 border-pink-500 text-pink-700' : 'bg-gray-50 border-transparent text-gray-400 hover:bg-gray-100'}`}><Heart size={20} className={selections.love ? 'fill-current' : ''}/><span className="text-[10px] font-bold mt-1">組みたい</span></button>
-                                <button onClick={() => handleSwipe('right')} disabled={!hasSelection} className={`flex-1 py-3 rounded-xl flex flex-col items-center transition border-2 ${hasSelection ? 'bg-blue-600 text-white border-blue-600' : 'bg-gray-200 text-gray-400 border-gray-200'}`}><ThumbsUp size={20} /><span className="text-[10px] font-bold mt-1">送信</span></button>
                             </div>
                         </div>
+                    </div>
+                    <div className="w-full max-w-md mt-6 flex items-center justify-between gap-6 px-4">
+                        <button onClick={() => handleSwipe('left')} className="w-16 h-16 rounded-full bg-white border-2 border-gray-200 text-gray-400 shadow-lg flex items-center justify-center hover:bg-red-50 hover:text-red-400 hover:border-red-200 hover:scale-110 transition-all active:scale-95"><X size={32} strokeWidth={3} /></button>
+                        <div className="flex-1"><button onClick={() => handleSwipe('right')} disabled={!hasSelection} className={`w-full py-4 rounded-2xl shadow-xl flex items-center justify-center gap-2 font-bold text-white transition-all active:scale-95 ${hasSelection ? 'bg-gradient-to-r from-blue-500 to-purple-600 hover:scale-[1.02] cursor-pointer' : 'bg-gray-300 cursor-not-allowed text-gray-100'}`}>{hasSelection ? <ThumbsUp size={20} /> : <Lock size={20} />}{hasSelection ? 'いいねを送る' : 'タグを選択してください'}</button></div>
                     </div>
                     <div className="text-xs text-gray-400 mt-4 font-mono">{currentIndex + 1} / {candidates.length} Cards</div>
                 </div>
             );
         };
         const ModernResultView = ({ currentUser, students, groups, isPublished }) => {
+            // [NEW] Modal State for Member Details
+            const [selectedMember, setSelectedMember] = useState(null);
+
             if (!isPublished) return <div className="flex flex-col items-center justify-center min-h-[60vh] p-8 text-center"><h2 className="text-3xl font-black text-gray-800 mb-2">Analyzing...</h2><p className="text-gray-500">先生が最適なチームを構成中です。<br/>しばらくお待ちください。</p></div>;
             const myGroupIndex = groups.findIndex(g => g.includes(currentUser.id));
             const myGroupMembers = myGroupIndex !== -1 ? students.filter(s => groups[myGroupIndex].includes(s.id)) : [];
+            
             return (
-                <div className="min-h-screen bg-gradient-to-b from-blue-50 to-white p-6 pt-12">
+                <div className="min-h-screen bg-gradient-to-b from-blue-50 to-white p-6 pt-12 relative">
                     <div className="max-w-2xl mx-auto">
                         <div className="text-center mb-10">
                             <div className="inline-block bg-yellow-400 text-yellow-900 font-black text-xs px-3 py-1 rounded-full uppercase tracking-widest mb-4 shadow-lg transform -rotate-2">Team Matched!</div>
@@ -732,7 +761,11 @@
                                 const isMe = member.id === currentUser.id;
                                 const cat = CATEGORIES.find(c => c.id === member.category) || CATEGORIES[0];
                                 return (
-                                    <div key={member.id} className="bg-white rounded-2xl p-4 shadow-xl border border-gray-100 flex items-center gap-4 transform hover:scale-[1.02] transition duration-300">
+                                    <div 
+                                        key={member.id} 
+                                        onClick={() => setSelectedMember(member)} // Click to open modal
+                                        className="bg-white rounded-2xl p-4 shadow-xl border border-gray-100 flex items-center gap-4 transform hover:scale-[1.02] transition duration-300 cursor-pointer hover:bg-gray-50"
+                                    >
                                         <div className={`w-14 h-14 rounded-2xl bg-gradient-to-br ${cat.color} flex items-center justify-center text-white font-bold text-xl shadow-md`}>{member.name.charAt(0)}</div>
                                         <div className="flex-1">
                                             <div className="flex justify-between items-center mb-1"><h3 className="font-bold text-lg text-gray-800 flex items-center gap-2">{member.name}{isMe && <span className="bg-gray-900 text-white text-[10px] px-2 py-0.5 rounded-full">YOU</span>}</h3><div className="text-xs font-bold text-gray-400">{cat.name}</div></div>
@@ -744,6 +777,65 @@
                             })}
                         </div>
                     </div>
+
+                    {/* Member Detail Modal */}
+                    {selectedMember && (
+                        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={() => setSelectedMember(null)}>
+                            <div className="bg-white text-gray-800 p-0 rounded-3xl shadow-2xl max-w-sm w-full overflow-hidden" onClick={e => e.stopPropagation()}>
+                                {/* Re-using design elements from CardStack but static */}
+                                {(() => {
+                                    const cat = CATEGORIES.find(c => c.id === selectedMember.category) || CATEGORIES[0];
+                                    return (
+                                        <>
+                                            <div className={`h-24 bg-gradient-to-br ${cat.color} p-6 flex flex-col justify-end text-white relative`}>
+                                                <div className="absolute top-4 right-4 bg-white/20 backdrop-blur px-3 py-1 rounded-full text-xs font-bold">ID: {selectedMember.id.slice(-4)}</div>
+                                                <div className="font-bold text-sm opacity-90">{cat.group}</div>
+                                                <div className="text-xl font-black leading-none shadow-black/10 drop-shadow-md">{cat.name}</div>
+                                            </div>
+                                            <div className="p-6 max-h-[60vh] overflow-y-auto">
+                                                <h3 className="text-xl font-bold mb-1">{selectedMember.name} <span className="text-sm text-gray-500 font-normal ml-2">{selectedMember.classId}組 {selectedMember.studentNumber}番</span></h3>
+                                                
+                                                {selectedMember.theme && (
+                                                    <div className="mb-4 mt-4">
+                                                        <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1 flex items-center gap-1"><Lightbulb size={12}/> 今考えている題材</h4>
+                                                        <div className="bg-yellow-50 p-3 rounded-xl border border-yellow-100 font-bold text-gray-800 text-sm">{selectedMember.theme}</div>
+                                                    </div>
+                                                )}
+
+                                                <div className="space-y-4 mt-4">
+                                                    <div>
+                                                        <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1 flex items-center gap-1"><Sparkles size={12}/> トピック</h4>
+                                                        <div className="flex flex-wrap gap-1">
+                                                            {selectedMember.topics?.map(tid => <span key={tid} className={`px-2 py-1 rounded-md text-xs font-bold border ${getTagStyle(tid, false)}`}>{TOPIC_TAGS.find(t=>t.id===tid)?.name}</span>)}
+                                                        </div>
+                                                    </div>
+                                                    <div>
+                                                        <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1 flex items-center gap-1"><Settings size={12}/> アプローチ</h4>
+                                                        <div className="flex flex-wrap gap-1">
+                                                            {selectedMember.approaches?.map(aid => { const a = APPROACH_TAGS.find(t=>t.id===aid); return a ? <span key={aid} className="bg-green-50 text-green-700 px-2 py-1 rounded-md text-xs font-bold border border-green-100">{a.icon} {a.name}</span> : null; })}
+                                                        </div>
+                                                    </div>
+                                                    <div>
+                                                        <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1 flex items-center gap-1"><Zap size={12}/> スキル</h4>
+                                                        <div className="flex flex-wrap gap-1">
+                                                            {selectedMember.skills?.map(s => <span key={s} className="bg-purple-50 text-purple-700 px-2 py-1 rounded-md text-xs font-bold border border-purple-100">{s}</span>)}
+                                                        </div>
+                                                    </div>
+                                                    <div>
+                                                        <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1 flex items-center gap-1"><Smile size={12}/> ひとこと</h4>
+                                                        <div className="bg-gray-50 p-3 rounded-xl border border-gray-100 text-sm text-gray-600 italic">"{selectedMember.comment}"</div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            <div className="p-4 border-t border-gray-100 bg-gray-50 text-center">
+                                                <button onClick={() => setSelectedMember(null)} className="bg-gray-800 text-white px-8 py-2 rounded-full font-bold text-sm hover:bg-gray-700 transition">閉じる</button>
+                                            </div>
+                                        </>
+                                    );
+                                })()}
+                            </div>
+                        </div>
+                    )}
                 </div>
             );
         };
@@ -765,35 +857,27 @@
                 return () => clearTimeout(timer);
             }, []);
 
-            // 1. Auth Listener
             useEffect(() => {
-                const unsubscribe = onAuthStateChanged(auth, (u) => {
-                    setUser(u);
+                const unsubscribe = onAuthStateChanged(auth, async (u) => {
+                    if (u) {
+                        setUser(u);
+                        const userDoc = await getDoc(doc(db, 'users', u.email));
+                        if (userDoc.exists()) {
+                            setCurrentUserData(userDoc.data());
+                        } else {
+                            setErrorMsg("このアカウントは登録されていません。管理者に問い合わせてください。");
+                            signOut(auth);
+                        }
+                    } else {
+                        setUser(null);
+                        setCurrentUserData(null);
+                    }
                 });
                 return () => unsubscribe();
             }, []);
 
-            // 2. User Data Listener
             useEffect(() => {
-                if (!user) {
-                    setCurrentUserData(null);
-                    return;
-                }
-                const unsubUser = onSnapshot(doc(db, 'users', user.email), (docSnap) => {
-                    if (docSnap.exists()) {
-                        setCurrentUserData(docSnap.data());
-                    } else {
-                        setErrorMsg("このアカウントは登録されていません。管理者に問い合わせてください。");
-                        signOut(auth);
-                    }
-                }, (error) => {
-                     console.error("User listener error:", error);
-                });
-                return () => unsubUser();
-            }, [user]);
-
-            useEffect(() => {
-                if (!user) return;
+                if (!user || !currentUserData) return;
                 const unsubSystem = onSnapshot(doc(db, 'system', 'config'), (doc) => {
                     if (doc.exists()) setPhase(doc.data().phase || PHASE.INPUT);
                 });
@@ -811,7 +895,7 @@
                     }
                 });
                 return () => { unsubSystem(); unsubStudents(); unsubGroups(); };
-            }, [user]);
+            }, [user, currentUserData]);
 
             const handleLogin = async () => {
                 try {
@@ -839,13 +923,10 @@
                 await updateDoc(userRef, { votes: { ...currentVotes, [targetId]: selections } });
             };
             const handleGenerateMock = () => {
-                // Generate and save to Firestore
                 const mocks = generateMockStudents(50);
                 const batch = writeBatch(db);
                 mocks.forEach(data => {
-                    // Use fake emails for ID
                     const ref = doc(db, 'users', `mock_${data.id}`); 
-                    // Add email field
                     batch.set(ref, { ...data, email: `mock_${data.id}@example.com` }); 
                 });
                 batch.commit().then(() => alert("デモデータ50件を追加しました"));
