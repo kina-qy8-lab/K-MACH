@@ -156,13 +156,15 @@
             return [...topPicks, ...randomPicks].sort(() => Math.random() - 0.5);
         };
 
-        const runWeightedMatchingAlgorithm = (students) => {
+        // --- Updated Matching Algorithm for Strict 3-5 Members ---
+        const runWeightedMatchingAlgorithm = (students, votes) => {
             if (!students || students.length === 0) return [];
             const W_MUTUAL_LOVE=1000, W_ONE_WAY_LOVE=100, W_TAG_MATCH=5, W_CAT_MATCH=3;
             const scoreMatrix = {}; 
             
             const targetStudents = students.filter(s => s.role !== 'teacher' && s.role !== 'admin');
-
+            
+            // Build Score Matrix
             targetStudents.forEach(s1 => {
                 scoreMatrix[s1.id] = {};
                 targetStudents.forEach(s2 => {
@@ -171,17 +173,18 @@
                     if (s1.category && s1.category === s2.category) score += W_CAT_MATCH;
                     const s1t = s1.topics || []; const s2t = s2.topics || [];
                     score += s1t.filter(t => s2t.includes(t)).length * W_TAG_MATCH;
-                    const votes = s1.votes || {};
-                    if (votes[s2.id]?.love) score += W_ONE_WAY_LOVE;
+                    const v1 = votes[s1.id]?.[s2.id] || {};
+                    if (v1.love) score += W_ONE_WAY_LOVE;
                     scoreMatrix[s1.id][s2.id] = score;
                 });
             });
 
             const unassigned = new Set(targetStudents.map(s => s.id));
-            const groups = [];
-            const MIN_SIZE = 3, MAX_SIZE = 5;
+            let groups = [];
+            const MIN_SIZE = 3;
+            const MAX_SIZE = 5;
 
-            // Phase 1: Cores
+            // 1. Form Cores (Mutual Love)
             while (unassigned.size > 0) {
                 let bestPair = null, maxScore = -1;
                 const arr = Array.from(unassigned).sort(() => Math.random() - 0.5);
@@ -189,8 +192,8 @@
                     for (let j = i + 1; j < arr.length; j++) {
                         const id1 = arr[i], id2 = arr[j];
                         let pairScore = (scoreMatrix[id1][id2] || 0) + (scoreMatrix[id2][id1] || 0);
-                        const v1 = targetStudents.find(s=>s.id===id1)?.votes?.[id2] || {};
-                        const v2 = targetStudents.find(s=>s.id===id2)?.votes?.[id1] || {};
+                        const v1 = votes[id1]?.[id2] || {};
+                        const v2 = votes[id2]?.[id1] || {};
                         if (v1.love && v2.love) pairScore += W_MUTUAL_LOVE * 2;
                         if (pairScore > maxScore) { maxScore = pairScore; bestPair = [id1, id2]; }
                     }
@@ -202,7 +205,7 @@
                 if (unassigned.size === 0) break;
             }
             
-            // Phase 2: Grow
+            // 2. Grow Groups (Greedy to 4)
             for (const group of groups) {
                 while (group.length < 4 && unassigned.size > 0) {
                     let bestCand = null, maxCandScore = -Infinity;
@@ -210,7 +213,7 @@
                         let totalScore = 0;
                         group.forEach(mId => {
                             totalScore += (scoreMatrix[candId][mId] || 0) + (scoreMatrix[mId][candId] || 0);
-                            const v = targetStudents.find(s=>s.id===candId)?.votes?.[mId] || {};
+                            const v = votes[candId]?.[mId] || {};
                             if(v.love) totalScore += W_ONE_WAY_LOVE;
                         });
                         if (totalScore > maxCandScore) { maxCandScore = totalScore; bestCand = candId; }
@@ -219,74 +222,114 @@
                 }
             }
 
-            // Phase 3: Leftovers
+            // 3. Assign Leftovers to existing groups (up to 5)
             const leftovers = Array.from(unassigned);
-            const remainingLeftovers = [];
+            let homeless = [];
             leftovers.forEach(candId => {
                 let bestGroupIdx = -1, maxFitScore = -Infinity;
                 groups.forEach((group, idx) => {
-                    if (group.length >= MAX_SIZE) return;
+                    if (group.length >= MAX_SIZE) return; // Strictly < 5
                     let score = 0;
                     group.forEach(mId => score += (scoreMatrix[candId][mId] || 0) + (scoreMatrix[mId][candId] || 0));
                     if (score > maxFitScore) { maxFitScore = score; bestGroupIdx = idx; }
                 });
                 if (bestGroupIdx !== -1) groups[bestGroupIdx].push(candId);
-                else remainingLeftovers.push(candId);
-            });
-            if (remainingLeftovers.length > 0) groups.push(remainingLeftovers);
-            
-            // Phase 4: Balancing
-            let finalGroups = [], bufferGroup = [];
-            groups.forEach(g => { if (g.length < MIN_SIZE) bufferGroup.push(...g); else finalGroups.push(g); });
-
-            const getCat = (sid) => targetStudents.find(s => s.id === sid)?.category;
-            const getGroupCat = (group) => group.length > 0 ? getCat(group[0]) : null;
-
-            let remainingBuffer = [];
-            bufferGroup.forEach(pid => {
-                const pCat = getCat(pid);
-                const compatibleGroups = finalGroups.filter(g => getGroupCat(g) === pCat && g.length < MAX_SIZE);
-                if (compatibleGroups.length > 0) {
-                    compatibleGroups.sort((a,b) => a.length - b.length);
-                    compatibleGroups[0].push(pid);
-                } else remainingBuffer.push(pid);
+                else homeless.push(candId);
             });
 
-            const byCategory = {};
-            remainingBuffer.forEach(pid => {
-                const cat = getCat(pid) || 'UNKNOWN';
-                if(!byCategory[cat]) byCategory[cat] = [];
-                byCategory[cat].push(pid);
-            });
-
-            Object.keys(byCategory).forEach(cat => {
-                const members = byCategory[cat];
-                if (members.length >= MIN_SIZE) finalGroups.push(members);
+            // 4. Handle Homeless & Split Large Groups
+            // First, split any groups > 5 (shouldn't happen with above logic, but safe guard)
+            let balancedGroups = [];
+            groups.forEach(g => {
+                if(g.length <= 5) balancedGroups.push(g);
                 else {
-                    const targetGroups = finalGroups.filter(g => getGroupCat(g) === cat);
-                    targetGroups.sort((a,b) => a.length - b.length);
-                    let assignedCount = 0;
-                    for (const g of targetGroups) {
-                        if (assignedCount >= members.length) break;
-                        if (g.length < MAX_SIZE + 1) { g.push(members[assignedCount]); assignedCount++; }
+                    // Split logic: e.g. 6 -> 3,3. 7 -> 4,3.
+                    let rem = [...g];
+                    while(rem.length > 5) {
+                        const splitSize = Math.ceil(rem.length / 2);
+                        balancedGroups.push(rem.splice(0, splitSize));
                     }
-                    if (assignedCount < members.length) finalGroups.push(members.slice(assignedCount));
+                    balancedGroups.push(rem);
                 }
             });
+            groups = balancedGroups;
 
-            const resultGroups = [];
-            const groupsToCheck = finalGroups.length > 0 ? finalGroups : groups;
-            groupsToCheck.forEach(group => {
-                if (group.length <= MAX_SIZE) resultGroups.push(group);
-                else {
-                    const size = group.length;
-                    const numSplits = Math.ceil(size / MAX_SIZE);
-                    const splitSize = Math.ceil(size / numSplits);
-                    let remaining = [...group];
-                    while(remaining.length > 0) resultGroups.push(remaining.splice(0, splitSize));
+            // If we have homeless, try to form a new group if enough
+            if (homeless.length >= MIN_SIZE) {
+                groups.push(homeless);
+                homeless = [];
+            }
+
+            // 5. Final Rebalancing (CRITICAL: Fix < 3 groups)
+            // If homeless remains (1 or 2 people), OR any existing group is < 3
+            // We must steal from 5-person groups.
+            
+            // Add homeless to "small groups" list effectively
+            if (homeless.length > 0) groups.push(homeless);
+
+            // Repeat balancing until all >= 3
+            let iterations = 0;
+            while(iterations < 50) { // Safety break
+                const smallGroups = groups.filter(g => g.length < 3);
+                if (smallGroups.length === 0) break; // All valid
+
+                // Take the smallest group
+                const targetGroup = smallGroups[0]; 
+                
+                // Try to steal from a rich group (size 5)
+                const richGroup = groups.find(g => g.length === 5);
+                
+                if (richGroup) {
+                    // Move 1 person from rich to target
+                    const movedMember = richGroup.pop();
+                    targetGroup.push(movedMember);
+                } else {
+                    // No size 5 groups. We might have only size 3 or 4.
+                    // If we have a size 4 group, we can steal 1 to make target larger?
+                    // target=2, rich=4 -> target=3, rich=3. OK.
+                    const mediumGroup = groups.find(g => g.length === 4);
+                    if (mediumGroup && targetGroup.length < 3) { // Only steal if target is desperate
+                        const movedMember = mediumGroup.pop();
+                        targetGroup.push(movedMember);
+                    } else {
+                        // All groups are 3 (or we have just one small group left and no one to steal from)
+                        // If we have [3, 3, 2] -> Merge 2 into 3s? -> [4, 4]
+                        // This happens if total N % 3 != 0 or similar constraints.
+                        // Force merge smallest into another group
+                        const groupToDissolve = groups.indexOf(targetGroup);
+                        if (groupToDissolve !== -1) {
+                            groups.splice(groupToDissolve, 1);
+                            // Distribute members to ANY group < 5
+                            targetGroup.forEach(p => {
+                                const dest = groups.find(g => g.length < 5);
+                                if(dest) dest.push(p);
+                                else {
+                                    // If all are 5, we are stuck. (e.g. 5, 5, 2 -> 12 people. optimal 4,4,4)
+                                    // Should trigger a split. 
+                                    // Simplified: Just push to first group to make 6, then split?
+                                    // Let's push to first group.
+                                    groups[0].push(p);
+                                }
+                            });
+                        }
+                    }
                 }
-            });
-            return resultGroups;
+                
+                // Check if any group became > 5 (due to forced merge) and split
+                const oversized = groups.findIndex(g => g.length > 5);
+                if(oversized !== -1) {
+                    const bigGroup = groups[oversized];
+                    groups.splice(oversized, 1);
+                    // Split 6 -> 3,3
+                    const half = Math.ceil(bigGroup.length / 2);
+                    groups.push(bigGroup.slice(0, half));
+                    groups.push(bigGroup.slice(half));
+                }
+                
+                iterations++;
+            }
+
+            return groups;
         };
 
         // --- CSV Import Component ---
@@ -308,7 +351,6 @@
                             category: cols[4] || '', // Allow empty
                             theme: cols[5] || '', // Allow empty
                             role: cols[6] || 'student', 
-                            // Don't overwrite existing user data like topics/skills
                         });
                     }
                 });
@@ -348,7 +390,48 @@
             </div>
         );
 
-        const TeacherPanel = ({ phase, studentCount, handleMatching, handlePublish, reset, onExport, onImportData }) => {
+        const RosterStatus = ({ students }) => {
+            return (
+                <div className="mt-8 bg-gray-800 rounded-2xl p-6 border border-gray-700 overflow-x-auto">
+                <h3 className="text-sm font-bold text-gray-400 uppercase tracking-widest mb-4 flex items-center gap-2">
+                    <Users size={16}/> Class Roster Status
+                </h3>
+                <div className="flex gap-4 min-w-max pb-4">
+                    {CLASS_LIST.map(cls => (
+                        <div key={cls} className="bg-gray-900/50 rounded-xl p-3 border border-gray-700 w-32 flex-shrink-0">
+                            <div className="text-center font-bold text-gray-300 mb-2 border-b border-gray-700 pb-1">{cls}組</div>
+                            <div className="grid grid-cols-4 gap-1">
+                            {STUDENT_NUMBERS.map(num => {
+                                const student = students.find(s => s.classId === cls && s.studentNumber === num);
+                                // Check if submitted: comment exists or flagged
+                                const isRegistered = student && (student.comment || (student.topics && student.topics.length > 0));
+                                return (
+                                    <div 
+                                    key={num} 
+                                    className={`aspect-square flex items-center justify-center text-[9px] font-bold rounded-sm transition-all ${
+                                        isRegistered 
+                                        ? 'bg-green-500 text-white shadow-[0_0_8px_rgba(34,197,94,0.6)] scale-105' 
+                                        : 'bg-gray-800 text-gray-600'
+                                    }`}
+                                    title={`${cls}組${num}番`}
+                                    >
+                                    {num}
+                                    </div>
+                                );
+                            })}
+                            </div>
+                        </div>
+                    ))}
+                </div>
+                <div className="flex justify-end gap-4 mt-2 text-xs text-gray-500">
+                    <div className="flex items-center gap-2"><div className="w-3 h-3 bg-gray-800 rounded-sm"></div> 未入力</div>
+                    <div className="flex items-center gap-2"><div className="w-3 h-3 bg-green-500 rounded-sm shadow-[0_0_5px_rgba(34,197,94,0.6)]"></div> 入力済</div>
+                </div>
+                </div>
+            );
+        };
+
+        const TeacherPanel = ({ phase, studentCount, handleMatching, handlePublish, reset, onExport, onImportData, students }) => {
             const updatePhase = async (newPhase) => {
                 await setDoc(doc(db, 'system', 'config'), { phase: newPhase }, { merge: true });
             };
@@ -386,7 +469,13 @@
                                 )}
                             </div>
                         </div>
-                        {phase === PHASE.INPUT && <DataImporter onImport={onImportData} />}
+                        {/* Import and Status only in INPUT */}
+                        {phase === PHASE.INPUT && (
+                            <>
+                                <DataImporter onImport={onImportData} />
+                                <RosterStatus students={students} />
+                            </>
+                        )}
                     </div>
                 </div>
             );
@@ -395,14 +484,12 @@
         const ModernInputForm = ({ currentUser, onSave }) => {
             const [isSubmitted, setIsSubmitted] = useState(false);
             const [formData, setFormData] = useState({ classId: 1, studentNumber: 1, name: '', category: '', theme: '', topics: [], approaches: [], skills: [], comment: '' });
-            
             useEffect(() => { 
                 if (currentUser) {
                     setFormData(prev => ({ ...prev, ...currentUser }));
                     if(currentUser.comment) setIsSubmitted(true);
                 } 
             }, [currentUser]);
-
             const handleSubmit = () => { onSave(formData); setIsSubmitted(true); };
             const toggleSelection = (field, value) => {
                 setFormData(prev => {
@@ -412,11 +499,9 @@
                     return { ...prev, [field]: [...current, value] };
                 });
             };
-
             const currentCategory = CATEGORIES.find(c => c.id === formData.category) || { name: '未設定', group: '-', color: 'from-gray-400 to-gray-300' };
             const isCategoryLocked = !!currentUser.category; // Locked if pre-set in DB
             const isThemeLocked = !!currentUser.theme;
-
             const sectionTitleClass = "text-lg font-bold text-gray-800 mb-4 flex items-center gap-2 border-b-2 border-gray-100 pb-2";
 
             if (isSubmitted) {
@@ -441,8 +526,6 @@
                                 <div className="w-1/3"><label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">No.</label><div className="w-full p-3 bg-gray-100 rounded-xl font-bold text-gray-700">{formData.studentNumber}番</div></div>
                             </div>
                             <div className="mb-4"><label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Name</label><div className="w-full text-xl font-bold border-b-2 border-gray-200 py-1 bg-transparent text-gray-800">{formData.name}</div></div>
-                            
-                            {/* Category: Display Fixed or Select */}
                             <div className="mb-4">
                                 <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-2 flex justify-between">Category {isCategoryLocked ? <Lock size={12}/> : <Unlock size={12} className="text-green-500"/>}</label>
                                 {isCategoryLocked ? (
@@ -454,8 +537,6 @@
                                     </select>
                                 )}
                             </div>
-
-                            {/* Theme: Display Fixed or Input */}
                             <div>
                                 <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-2 flex justify-between">Research Theme {isThemeLocked ? <Lock size={12}/> : <Unlock size={12} className="text-green-500"/>}</label>
                                 {isThemeLocked ? (
@@ -492,14 +573,11 @@
             const [currentIndex, setCurrentIndex] = useState(0);
             const [direction, setDirection] = useState(null);
             const [selections, setSelections] = useState({ direction: false, skill: false, love: false });
-            
             const candidates = useMemo(() => getRecommendedCandidates(currentUser, students), [students.length, currentUser.id]);
             const currentStudent = candidates[currentIndex];
-            
             useEffect(() => { setSelections({ direction: false, skill: false, love: false }); }, [currentIndex]);
             const toggleSelection = (type) => setSelections(prev => ({ ...prev, [type]: !prev[type] }));
             const hasSelection = useMemo(() => Object.values(selections).some(v => v), [selections]);
-            
             const handleSwipe = (dir) => {
                 if (!currentStudent || direction || (dir === 'right' && !hasSelection)) return;
                 setDirection(dir);
