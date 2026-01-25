@@ -1057,7 +1057,8 @@
                                 {phase === PHASE.CHECK && <CardStack currentUser={currentUserData} students={students} onVote={handleVote} />}
                             </div>
                         )}
-                        {(phase === PHASE.MATCHING || phase === PHASE.PUBLISH) && (
+                        {/* [MODIFIED] Hide preview for teacher during MATCHING phase */}
+                        {((!isTeacher && phase === PHASE.MATCHING) || phase === PHASE.PUBLISH) && (
                             <div className={isTeacher ? "border-4 border-green-500 rounded-xl m-4 relative overflow-hidden" : ""}>
                                 {isTeacher && <div className="absolute top-0 left-0 bg-green-500 text-white px-3 py-1 text-xs font-bold rounded-br-xl z-50 flex items-center gap-1"><Eye size={12}/> 生徒画面プレビュー</div>}
                                 <ModernResultView currentUser={currentUserData} students={students} groups={groups} isPublished={phase === PHASE.PUBLISH || isTeacher} />
