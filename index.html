@@ -154,8 +154,6 @@
             const currentVoteCount = votedIds.length;
             const remainingCount = Math.max(0, 30 - currentVoteCount);
             
-            // Return top matches up to remainingCount
-            // We mix a bit of randomness to avoid deterministic deadlock if multiple people have same score
             const topSlice = Math.min(remainingCount, scoredCandidates.length);
             return scoredCandidates.slice(0, topSlice);
         };
@@ -359,9 +357,10 @@
             return mocks;
         };
 
-        // --- CSV Import Component ---
+        // --- CSV Import Component (Fixed NaN issue) ---
         const DataImporter = ({ onImport }) => {
             const [text, setText] = useState('');
+            
             const handleImport = () => {
                 const rows = text.trim().split('\n');
                 const data = [];
@@ -370,38 +369,57 @@
                     if(cols.length >= 4) {
                         const classId = parseInt(cols[1]);
                         const studentNumber = parseInt(cols[2]);
+                        
                         if (!isNaN(classId) && !isNaN(studentNumber)) {
                             data.push({
-                                id: cols[0], email: cols[0],
-                                classId: classId, studentNumber: studentNumber,
-                                name: cols[3], category: cols[4] || '', theme: cols[5] || '',
+                                id: cols[0], // Email as ID
+                                email: cols[0],
+                                classId: classId,
+                                studentNumber: studentNumber,
+                                name: cols[3],
+                                category: cols[4] || '', // Allow empty
+                                theme: cols[5] || '', // Allow empty
                                 role: cols[6] || 'student', 
                             });
                         }
                     }
                 });
-                if(data.length === 0) { alert("データが見つかりませんでした。フォーマットを確認してください。"); return; }
+                if(data.length === 0) {
+                    alert("データが見つかりませんでした。フォーマットを確認してください。");
+                    return;
+                }
                 onImport(data);
                 setText('');
             };
+
             return (
                 <div className="bg-gray-800 p-4 rounded-xl border border-gray-700 mt-4">
                     <h3 className="font-bold text-gray-300 mb-2 flex items-center gap-2"><Upload size={16}/> 生徒データ一括登録 (CSV)</h3>
                     <p className="text-xs text-gray-500 mb-2">Format: email, class, number, name, categoryID, theme, role</p>
-                    <textarea className="w-full h-32 bg-gray-900 text-xs font-mono text-green-400 p-2 rounded border border-gray-600 mb-2" placeholder="student1@example.com, 1, 1, 山田太郎, NAT_MAT, 研究テーマ, student" value={text} onChange={(e) => setText(e.target.value)} />
+                    <textarea 
+                        className="w-full h-32 bg-gray-900 text-xs font-mono text-green-400 p-2 rounded border border-gray-600 mb-2"
+                        placeholder="student1@example.com, 1, 1, 山田太郎, NAT_MAT, 研究テーマ, student"
+                        value={text}
+                        onChange={(e) => setText(e.target.value)}
+                    />
                     <button onClick={handleImport} className="bg-green-600 hover:bg-green-500 text-white px-4 py-2 rounded-lg text-xs font-bold w-full">登録を実行 (上書き更新)</button>
                 </div>
             );
         };
 
         // --- Components ---
+
         const LoginScreen = ({ onLogin }) => (
             <div className="min-h-screen flex items-center justify-center bg-gray-100 p-4">
                 <div className="bg-white p-8 rounded-3xl shadow-xl max-w-md w-full text-center">
-                    <div className="bg-blue-600 w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-6 shadow-lg shadow-blue-200"><Sparkles size={32} className="text-white"/></div>
+                    <div className="bg-blue-600 w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-6 shadow-lg shadow-blue-200">
+                        <Sparkles size={32} className="text-white"/>
+                    </div>
                     <h1 className="text-2xl font-black text-gray-800 mb-2">K-MATCH</h1>
                     <p className="text-gray-500 mb-8">Googleアカウントでログインしてください。<br/>登録済みのユーザーのみ利用可能です。</p>
-                    <button onClick={onLogin} className="w-full bg-white border border-gray-300 text-gray-700 font-bold py-3 rounded-xl flex items-center justify-center gap-3 hover:bg-gray-50 transition"><img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" className="w-5 h-5"/> Googleでログイン</button>
+                    <button onClick={onLogin} className="w-full bg-white border border-gray-300 text-gray-700 font-bold py-3 rounded-xl flex items-center justify-center gap-3 hover:bg-gray-50 transition">
+                        <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" className="w-5 h-5"/> Googleでログイン
+                    </button>
                 </div>
             </div>
         );
@@ -613,6 +631,7 @@
                                 )}
                             </div>
                         </section>
+                        
                         <section>
                             <label className={sectionTitleClass}><Sparkles size={20} className="text-purple-500"/> トピックカードを選択（最大5つ）<span className="ml-auto text-xs font-bold text-blue-500 bg-blue-50 px-2 py-1 rounded-full">{(formData.topics||[]).length}/5</span></label>
                             <div className="flex flex-wrap gap-2">{TOPIC_TAGS.map(t => (<button key={t.id} onClick={() => toggleSelection('topics', t.id)} className={`text-xs px-4 py-2 rounded-lg border font-bold transition-all duration-200 ${(formData.topics||[]).includes(t.id) ? 'bg-blue-600 border-blue-600 text-white shadow-md transform scale-105' : 'bg-white border-gray-200 text-gray-600 hover:border-blue-300 hover:bg-gray-50'}`}>{t.name}</button>))}</div>
@@ -746,27 +765,35 @@
                 return () => clearTimeout(timer);
             }, []);
 
+            // 1. Auth Listener
             useEffect(() => {
-                const unsubscribe = onAuthStateChanged(auth, async (u) => {
-                    if (u) {
-                        setUser(u);
-                        const userDoc = await getDoc(doc(db, 'users', u.email));
-                        if (userDoc.exists()) {
-                            setCurrentUserData(userDoc.data());
-                        } else {
-                            setErrorMsg("このアカウントは登録されていません。管理者に問い合わせてください。");
-                            signOut(auth);
-                        }
-                    } else {
-                        setUser(null);
-                        setCurrentUserData(null);
-                    }
+                const unsubscribe = onAuthStateChanged(auth, (u) => {
+                    setUser(u);
                 });
                 return () => unsubscribe();
             }, []);
 
+            // 2. User Data Listener
             useEffect(() => {
-                if (!user || !currentUserData) return;
+                if (!user) {
+                    setCurrentUserData(null);
+                    return;
+                }
+                const unsubUser = onSnapshot(doc(db, 'users', user.email), (docSnap) => {
+                    if (docSnap.exists()) {
+                        setCurrentUserData(docSnap.data());
+                    } else {
+                        setErrorMsg("このアカウントは登録されていません。管理者に問い合わせてください。");
+                        signOut(auth);
+                    }
+                }, (error) => {
+                     console.error("User listener error:", error);
+                });
+                return () => unsubUser();
+            }, [user]);
+
+            useEffect(() => {
+                if (!user) return;
                 const unsubSystem = onSnapshot(doc(db, 'system', 'config'), (doc) => {
                     if (doc.exists()) setPhase(doc.data().phase || PHASE.INPUT);
                 });
@@ -784,7 +811,7 @@
                     }
                 });
                 return () => { unsubSystem(); unsubStudents(); unsubGroups(); };
-            }, [user, currentUserData]);
+            }, [user]);
 
             const handleLogin = async () => {
                 try {
@@ -812,10 +839,13 @@
                 await updateDoc(userRef, { votes: { ...currentVotes, [targetId]: selections } });
             };
             const handleGenerateMock = () => {
+                // Generate and save to Firestore
                 const mocks = generateMockStudents(50);
                 const batch = writeBatch(db);
                 mocks.forEach(data => {
+                    // Use fake emails for ID
                     const ref = doc(db, 'users', `mock_${data.id}`); 
+                    // Add email field
                     batch.set(ref, { ...data, email: `mock_${data.id}@example.com` }); 
                 });
                 batch.commit().then(() => alert("デモデータ50件を追加しました"));
