@@ -312,7 +312,7 @@
         const calculateTeamMetrics = (groupMembers, allStudents, votes) => {
             // groupMembers: student objects[]
             if (!groupMembers || groupMembers.length < 2) {
-                return { score: 0, purity: 0, avgCatDistance: 0, crossFieldPairs: 0, mutualPairs: 0, connection: 0, interest: 0, diversity: 0, uniqueSkillsCount: 0 };
+                return { score: 0, purity: 0, avgCatDistance: 0, crossFieldPairs: 0, mutualPairs: 0, connection: 0, interest: 0, diversity: 0, uniqueSkillsCount: 0, uniqueCategoriesCount: 0 };
             }
 
             // --- purity (dominant category ratio) ---
@@ -321,6 +321,10 @@
             cats.forEach(c => counts[c] = (counts[c] || 0) + 1);
             const maxCat = Object.values(counts).reduce((a,b) => Math.max(a,b), 0);
             const purity = cats.length ? (maxCat / groupMembers.length) : 0;
+
+            // --- unique category count (penalty) ---
+            const missingCount = groupMembers.length - cats.length;
+            const uniqueCategoriesCount = Object.keys(counts).length + (missingCount > 0 ? 1 : 0);
 
             // --- avg distance & cross-field pairs ---
             let distSum = 0;
@@ -372,14 +376,17 @@
             // Composite score: favor purity & low distance strongly, then add connection/interest/diversity
             // ※100に正規化（表示用）
             let raw = 0;
-            raw += purity * 500;                 // purity最重視
-            raw += (1 - Math.min(1, avgCatDistance / 3)) * 300; // distanceが小さいほど加点
+            raw += purity * 520;                 // purity最重視（少し強め）
+            raw += (1 - Math.min(1, avgCatDistance / 3)) * 310; // distanceが小さいほど加点
             raw += (connection / 10);            // スケール調整
             raw += (interest / 10);
             raw += diversity;
 
+            // unique categories penalty: 2カテゴリ以上は段階的に減点（同カテゴリに寄せる）
+            raw -= Math.max(0, uniqueCategoriesCount - 1) * 120;
+
             // cross-field is a hard red flag
-            raw -= crossFieldPairs * 400;
+            raw -= crossFieldPairs * 420;
 
             let score = Math.max(0, Math.min(100, Math.round(raw / 10)));
 
@@ -392,7 +399,8 @@
                 connection: Math.round(connection),
                 interest: Math.round(interest),
                 diversity: Math.round(diversity),
-                uniqueSkillsCount
+                uniqueSkillsCount,
+                uniqueCategoriesCount
             };
         };
 
@@ -409,6 +417,64 @@
             const MIN_SIZE = 3;
             const MAX_SIZE = 5;
             const IDEAL_SIZE = 4;
+
+            // ==========================
+            // [NEW] Rare category handling
+            // ==========================
+            const catCounts = {};
+            target.forEach(s => {
+                const c = s.category || '__MISSING__';
+                catCounts[c] = (catCounts[c] || 0) + 1;
+            });
+            const RARE_THRESHOLD = 3; // 1-3人しかいないカテゴリは「レア」扱い
+            const isRareCat = (catId) => {
+                const c = catId || '__MISSING__';
+                return (catCounts[c] || 0) <= RARE_THRESHOLD;
+            };
+
+            // ==========================
+            // [NEW] Team-level knobs
+            // ==========================
+            const INIT_MAX_UNIQUE_CATS = 2;      // 初期生成（seed〜grow）で許容する最大ユニークカテゴリ数
+            const INIT_MIN_PURITY      = 0.50;   // 初期生成での最低カテゴリ純度（dominant/size）
+            const UNIQUE_CAT_PENALTY   = 180;    // ユニークカテゴリ数が増えるほど罰（最適化の核）
+            const PURITY_BONUS         = 260;    // purityが高いほど報酬（最適化の核）
+
+            const groupCategoryStats = (group) => {
+                const counts = {};
+                let missing = 0;
+                group.forEach(id => {
+                    const c = byId[id]?.category;
+                    if (!c) { missing++; return; }
+                    counts[c] = (counts[c] || 0) + 1;
+                });
+                const uniq = Object.keys(counts).length + (missing > 0 ? 1 : 0);
+                const max = Object.values(counts).reduce((a,b) => Math.max(a,b), 0) || 0;
+                const purity = group.length ? (max / group.length) : 0;
+                // dominant category (for gating)
+                let dom = null;
+                let domCnt = -1;
+                Object.entries(counts).forEach(([k,v]) => { if (v > domCnt) { domCnt = v; dom = k; } });
+                return { uniqCats: uniq, purity, dominantCat: dom, missing };
+            };
+
+            const wouldViolateInitCohesion = (group, candId) => {
+                const next = [...group, candId];
+                const st = groupCategoryStats(next);
+
+                // 基本ルール：ユニークカテゴリが増えすぎるのを防ぐ
+                if (st.uniqCats > INIT_MAX_UNIQUE_CATS) return true;
+
+                // purity下限（ただしレアカテゴリが絡む場合は少し緩める）
+                const candCat = byId[candId]?.category;
+                const rareInGroup = group.some(id => isRareCat(byId[id]?.category));
+                const rareCand = isRareCat(candCat);
+                const minPur = (rareInGroup || rareCand) ? 0.40 : INIT_MIN_PURITY;
+
+                if (next.length >= 3 && st.purity < minPur) return true;
+
+                return false;
+            };
 
             // Precompute pair scores
             const ps = {}; // ps[a][b] => undirected score
@@ -435,16 +501,27 @@
             const teamCohesionPenalty = (group) => {
                 // 目的：カテゴリ距離の合計を下げたい（= 近いカテゴリで固めたい）
                 let penalty = 0;
+
+                // (1) dist penalty
                 for (let i = 0; i < group.length; i++) {
                     for (let j = i + 1; j < group.length; j++) {
                         const s1 = byId[group[i]], s2 = byId[group[j]];
                         const dist = categoryDistance(s1.category, s2.category);
                         // dist=3 は強烈に罰する（別分野混合を極力防止）
                         if (dist === 3) penalty += FIELD_MISMATCH_PENALTY;
-                        else penalty += dist * 120; // dist=0,1,2 を段階的に罰
+                        else penalty += dist * 140; // dist=0,1,2 を段階的に罰（少し強め）
                     }
                 }
-                // 多様性は “重複ペナルティを弱めた代わりに” チームのユニークスキルで少しボーナス
+
+                // (2) unique category count penalty + purity bonus
+                const st = groupCategoryStats(group);
+                penalty += Math.max(0, st.uniqCats - 1) * UNIQUE_CAT_PENALTY;
+                penalty -= st.purity * PURITY_BONUS * group.length;
+
+                // (3) missing category makes grouping unstable → extra penalty
+                penalty += st.missing * CAT_MISSING_PENALTY;
+
+                // (4) 多様性は “重複ペナルティを弱めた代わりに” チームのユニークスキルで少しボーナス
                 const unique = new Set();
                 group.forEach(id => (byId[id].skills || []).forEach(sk => unique.add(sk)));
                 penalty -= unique.size * W.TEAM_UNIQUE_SKILL_BONUS;
@@ -468,17 +545,22 @@
             // -------------------------------
             // (C) Build initial groups:
             // "near-category first" greedy seeding + grow
+            // + [NEW] rare-category-first + purity/unique-cat gates
             // -------------------------------
             const unassigned = new Set(ids);
             const groups = [];
 
             const pickSeed = () => {
-                // seed = unassignedの中で「近い候補が多い」人（カテゴリが埋まってる人）を優先
+                // seed = unassignedの中で
+                // 1) レアカテゴリを優先（取り残し対策）
+                // 2) 近い候補が多い（カテゴリが埋まってる）人を優先
                 let best = null;
                 let bestScore = -Infinity;
+
                 for (const id of unassigned) {
                     const s = byId[id];
                     const cat = s.category;
+
                     let deg = 0;
                     for (const id2 of unassigned) {
                         if (id2 === id) continue;
@@ -487,9 +569,14 @@
                         if (d <= 1) deg += 2;
                         else if (d === 2) deg += 1;
                     }
+
                     // votesが多いほど（相互好意が出やすい）少し優先
                     const vcnt = s.votes ? Object.keys(s.votes).length : 0;
-                    const sc = deg * 10 + Math.min(vcnt, 30);
+
+                    // rare bonus
+                    const rareBonus = isRareCat(cat) ? 1200 : 0;
+
+                    const sc = rareBonus + deg * 10 + Math.min(vcnt, 30);
                     if (sc > bestScore) { bestScore = sc; best = id; }
                 }
                 return best;
@@ -499,29 +586,69 @@
                 let best = null;
                 let bestSc = -Infinity;
                 const s = byId[seedId];
-                // まず dist<=1 を最優先
+                const seedCat = s.category;
+
+                const consider = (id2, bonus = 0) => {
+                    const sc = (ps[seedId]?.[id2] || -Infinity) + bonus;
+                    if (sc > bestSc) { bestSc = sc; best = id2; }
+                };
+
+                // If seed is rare: same-cat first, then neighbor, then same field
+                if (isRareCat(seedCat)) {
+                    for (const id2 of unassigned) {
+                        if (id2 === seedId) continue;
+                        if ((byId[id2].category || '') === seedCat && !wouldViolateInitCohesion([seedId], id2)) consider(id2, 500);
+                    }
+                    if (best) return best;
+
+                    for (const id2 of unassigned) {
+                        if (id2 === seedId) continue;
+                        const d = categoryDistance(seedCat, byId[id2].category);
+                        if (d === 1 && !wouldViolateInitCohesion([seedId], id2)) consider(id2, 250);
+                    }
+                    if (best) return best;
+
+                    for (const id2 of unassigned) {
+                        if (id2 === seedId) continue;
+                        const d = categoryDistance(seedCat, byId[id2].category);
+                        if (d === 2 && !wouldViolateInitCohesion([seedId], id2)) consider(id2, 50);
+                    }
+                    if (best) return best;
+                }
+
+                // Normal: dist<=1 first
                 for (const id2 of unassigned) {
                     if (id2 === seedId) continue;
-                    const d = categoryDistance(s.category, byId[id2].category);
+                    const d = categoryDistance(seedCat, byId[id2].category);
                     if (d > 1) continue;
-                    const sc = ps[seedId]?.[id2] || -Infinity;
-                    if (sc > bestSc) { bestSc = sc; best = id2; }
+                    if (wouldViolateInitCohesion([seedId], id2)) continue;
+                    consider(id2, 150);
                 }
                 if (best) return best;
-                // 次に dist<=2
+
+                // Next: dist<=2
                 for (const id2 of unassigned) {
                     if (id2 === seedId) continue;
-                    const d = categoryDistance(s.category, byId[id2].category);
+                    const d = categoryDistance(seedCat, byId[id2].category);
                     if (d > 2) continue;
-                    const sc = ps[seedId]?.[id2] || -Infinity;
-                    if (sc > bestSc) { bestSc = sc; best = id2; }
+                    if (wouldViolateInitCohesion([seedId], id2)) continue;
+                    consider(id2, 30);
                 }
                 if (best) return best;
-                // 最後の手段
+
+                // Last resort: any (but still avoid dist=3 if possible)
                 for (const id2 of unassigned) {
                     if (id2 === seedId) continue;
-                    const sc = ps[seedId]?.[id2] || -Infinity;
-                    if (sc > bestSc) { bestSc = sc; best = id2; }
+                    const d = categoryDistance(seedCat, byId[id2].category);
+                    if (d === 3) continue;
+                    consider(id2, 0);
+                }
+                if (best) return best;
+
+                // absolute last
+                for (const id2 of unassigned) {
+                    if (id2 === seedId) continue;
+                    consider(id2, 0);
                 }
                 return best;
             };
@@ -540,28 +667,67 @@
                     unassigned.delete(partner);
                 }
 
-                // grow to IDEAL_SIZE (4)
+                // grow to IDEAL_SIZE (4) with cohesion gates
                 while (group.length < IDEAL_SIZE && unassigned.size > 0) {
                     let bestCand = null;
                     let bestFit = -Infinity;
 
+                    // (1) strict pass: enforce cohesion (unique cats / purity / avoid dist=3)
                     for (const cand of unassigned) {
-                        // カテゴリ距離ゲート：極力 dist<=2 まで
+                        // dist=3に寄りすぎる候補は弾く（平均距離ベース）
                         const avgDist = (() => {
                             const c = byId[cand].category;
                             let sum = 0;
                             group.forEach(m => sum += categoryDistance(c, byId[m].category));
                             return sum / group.length;
                         })();
-                        if (avgDist >= 2.5) continue; // dist=3に寄りすぎる候補は弾く
+                        if (avgDist >= 2.5) continue;
+
+                        // [NEW] cohesion gate
+                        if (wouldViolateInitCohesion(group, cand)) continue;
+
+                        // [NEW] dominant-cat distance gate (基本は dist<=1 を優先)
+                        const st = groupCategoryStats(group);
+                        const dom = st.dominantCat || byId[group[0]]?.category;
+                        const dDom = categoryDistance(dom, byId[cand].category);
+                        if (dDom > 1) continue;
 
                         const sc = fitScore(cand, group);
                         if (sc > bestFit) { bestFit = sc; bestCand = cand; }
                     }
 
-                    // どうしても見つからない場合はゲートを緩めて1人だけ入れる
+                    // (2) relaxed pass: allow dist==2 within same field if still cohesive OR rare involved
                     if (!bestCand) {
                         for (const cand of unassigned) {
+                            const avgDist = (() => {
+                                const c = byId[cand].category;
+                                let sum = 0;
+                                group.forEach(m => sum += categoryDistance(c, byId[m].category));
+                                return sum / group.length;
+                            })();
+                            if (avgDist >= 2.8) continue; // still avoid heavy dist=3
+
+                            if (wouldViolateInitCohesion(group, cand)) continue;
+
+                            const st = groupCategoryStats(group);
+                            const dom = st.dominantCat || byId[group[0]]?.category;
+                            const dDom = categoryDistance(dom, byId[cand].category);
+
+                            const rareInGroup = group.some(id => isRareCat(byId[id]?.category));
+                            const rareCand = isRareCat(byId[cand].category);
+
+                            if (dDom > 2) continue;
+                            if (dDom === 2 && !(rareInGroup || rareCand)) continue; // レアが絡まない限り dist=2 は抑制
+
+                            const sc = fitScore(cand, group);
+                            if (sc > bestFit) { bestFit = sc; bestCand = cand; }
+                        }
+                    }
+
+                    // (3) 最後の手段：純度ゲートのみ守って入れる（どうしても埋まらない場合）
+                    if (!bestCand) {
+                        for (const cand of unassigned) {
+                            if (wouldViolateInitCohesion(group, cand)) continue;
                             const sc = fitScore(cand, group);
                             if (sc > bestFit) { bestFit = sc; bestCand = cand; }
                         }
@@ -586,19 +752,38 @@
                     groups.splice(i, 1);
                 }
             }
-            // Put pool back into best-fit groups first
+
+            // Put pool back into best-fit groups first (avoid blowing up unique categories)
             for (const pid of pool) {
-                // try put into group with space and minimal avg dist
                 let bestIdx = -1;
                 let best = -Infinity;
+
                 for (let i = 0; i < groups.length; i++) {
                     if (groups[i].length >= MAX_SIZE) continue;
-                    const sc = fitScore(pid, groups[i]) - teamCohesionPenalty([...groups[i], pid]);
+
+                    // category gate: prefer keep unique cats small
+                    const st = groupCategoryStats(groups[i]);
+                    const candCat = byId[pid]?.category;
+                    const nextUniq = (() => {
+                        const counts = {};
+                        let miss = 0;
+                        [...groups[i], pid].forEach(id => {
+                            const c = byId[id]?.category;
+                            if (!c) { miss++; return; }
+                            counts[c] = (counts[c] || 0) + 1;
+                        });
+                        return Object.keys(counts).length + (miss > 0 ? 1 : 0);
+                    })();
+                    const uniqPenalty = Math.max(0, nextUniq - st.uniqCats) * UNIQUE_CAT_PENALTY;
+
+                    const sc = fitScore(pid, groups[i]) - teamCohesionPenalty([...groups[i], pid]) - uniqPenalty;
                     if (sc > best) { best = sc; bestIdx = i; }
                 }
+
                 if (bestIdx >= 0) groups[bestIdx].push(pid);
                 else groups.push([pid]); // should be rare
             }
+
             // If still <3 groups exist, merge into closest group
             for (let i = groups.length - 1; i >= 0; i--) {
                 if (groups[i].length < MIN_SIZE) {
@@ -615,6 +800,7 @@
                     else groups.push(small);
                 }
             }
+
             // Split oversized groups
             for (let i = groups.length - 1; i >= 0; i--) {
                 if (groups[i].length > MAX_SIZE) {
@@ -631,7 +817,7 @@
             let bestGroups = groups.map(g => [...g]);
             let bestObj = totalObjective(bestGroups);
 
-            const MAX_IT = 2500;
+            const MAX_IT = 6500; // 1回勝負なので少し厚めに探索
             const randInt = (n) => Math.floor(Math.random() * n);
 
             for (let it = 0; it < MAX_IT; it++) {
