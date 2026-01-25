@@ -184,9 +184,9 @@
                         connectionScore += 5; // One-way Love
                     }
 
-                    // Interest (Category match)
+                    // Interest (Category match) [MODIFIED] Increased weight
                     if (s1.category && s1.category === s2.category) {
-                        interestScore += 5;
+                        interestScore += 10;
                     }
                     // Interest (Topic match)
                     const s1Topics = s1.topics || [];
@@ -196,20 +196,30 @@
                 }
             }
 
+            // [NEW] Category Consistency Bonus (Team level)
+            const categories = groupMembers.map(m => m.category).filter(Boolean);
+            const catCounts = {};
+            let maxCatCount = 0;
+            categories.forEach(c => { 
+                catCounts[c] = (catCounts[c] || 0) + 1; 
+                if(catCounts[c] > maxCatCount) maxCatCount = catCounts[c];
+            });
+            const categoryBonus = groupMembers.length > 0 ? (maxCatCount / groupMembers.length) * 20 : 0;
+
             // Diversity (Unique Skills count)
             const allSkills = new Set();
             groupMembers.forEach(s => (s.skills || []).forEach(sk => allSkills.add(sk)));
             const diversityScore = allSkills.size * 3;
 
             // Total Score Normalize (Rough calculation for display)
-            // Base 50 points, add bonuses
-            let total = 50 + connectionScore + interestScore + diversityScore;
+            // Base 30 points
+            let total = 30 + connectionScore + interestScore + categoryBonus + diversityScore;
             if (total > 100) total = 100;
 
             return {
                 score: Math.min(100, Math.round(total)),
                 connection: connectionScore,
-                interest: interestScore,
+                interest: Math.round(interestScore + categoryBonus),
                 diversity: diversityScore,
                 mutualPairs,
                 uniqueSkillsCount: allSkills.size
