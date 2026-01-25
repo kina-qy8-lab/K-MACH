@@ -11,12 +11,12 @@
     <script type="importmap">
     {
         "imports": {
-            "react": "https://esm.sh/react@18.2.0",
-            "react-dom/client": "https://esm.sh/react-dom@18.2.0/client",
-            "lucide-react": "https://esm.sh/lucide-react@0.263.1",
-            "firebase/app": "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js",
-            "firebase/auth": "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js",
-            "firebase/firestore": "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js"
+            apiKey: "AIzaSyCGIKgIuSlee2SxUlNsatUH1l7C2BkH3hc",
+            authDomain: "k-mach.firebaseapp.com",
+            projectId: "k-mach",
+            storageBucket: "k-mach.firebasestorage.app",
+            messagingSenderId: "735279357382",
+            appId: "1:735279357382:web:8dcecd5d5f01c7337826c7"
         }
     }
     </script>
@@ -31,7 +31,7 @@
         import { 
             Users, Layers, Settings, RefreshCw, Star, Heart, ArrowRight, 
             CheckCircle, X, Zap, Award, Smile, Sparkles, ThumbsUp, Lock, Unlock,
-            Edit3, Lightbulb, Download, LogOut, Upload, Database, AlertCircle, Eye
+            Edit3, Lightbulb, Download, LogOut, Upload, Database, AlertCircle, Eye, Trash2, ToggleLeft, ToggleRight
         } from 'lucide-react';
         
         // --- Firebase Imports & Config ---
@@ -40,17 +40,17 @@
             getAuth, signInWithPopup, GoogleAuthProvider, signOut, onAuthStateChanged 
         } from "firebase/auth";
         import { 
-            getFirestore, collection, doc, getDoc, setDoc, updateDoc, onSnapshot, writeBatch
+            getFirestore, collection, doc, getDoc, setDoc, updateDoc, deleteDoc, onSnapshot, writeBatch
         } from "firebase/firestore";
 
         // 【重要】ここにFirebaseコンソールからコピーした設定値を貼り付けてください
         const firebaseConfig = {
-            apiKey: "AIzaSyCGIKgIuSlee2SxUlNsatUH1l7C2BkH3hc",
-            authDomain: "k-mach.firebaseapp.com",
-            projectId: "k-mach",
-            storageBucket: "k-mach.firebasestorage.app",
-            messagingSenderId: "735279357382",
-            appId: "1:735279357382:web:8dcecd5d5f01c7337826c7"
+            apiKey: "DUMMY_API_KEY_CHANGE_THIS",
+            authDomain: "dummy-project.firebaseapp.com",
+            projectId: "dummy-project",
+            storageBucket: "dummy-project.appspot.com",
+            messagingSenderId: "00000000000",
+            appId: "1:00000000:web:abcdef12345"
         };
 
         // Initialize Firebase
@@ -114,17 +114,20 @@
         ];
 
         const SKILLS = ['データ分析', '統計処理', 'プログラミング', '英語文献読解', '実験手技', '工作・DIY', 'デザイン', '動画編集', 'リーダーシップ', 'プレゼン'];
+        
+        // Mock Themes for demo data generation
         const MOCK_THEMES = ["未利用魚を活用した新商品開発", "学校内のプラゴミ削減", "AI古文解読アプリ", "伝統工芸のリブランディング", "植物由来代替肉の研究", "避難経路シミュレーション"];
+        
+        const PHASE = { INPUT: 'INPUT', CHECK: 'CHECK', MATCHING: 'MATCHING', PUBLISH: 'PUBLISH' };
         const CLASS_LIST = Array.from({ length: 9 }, (_, i) => i + 1);
         const STUDENT_NUMBERS = Array.from({ length: 40 }, (_, i) => i + 1);
-        const PHASE = { INPUT: 'INPUT', CHECK: 'CHECK', MATCHING: 'MATCHING', PUBLISH: 'PUBLISH' };
 
         // [MOCK DATABASE] Firebase未接続時のためのダミーデータ
         const MOCK_MASTER_DATA = [
             { id: 'student_001', email: 'student1@example.com', classId: 3, studentNumber: 15, name: '田中 陽翔', category: 'NAT_BIO', theme: '地元の河川における外来種が生態系に与える影響調査' }
         ];
 
-        // --- Logic: Matching ---
+        // --- Logic: Matching (Updated for Strict 3-5 Members) ---
         const getRecommendedCandidates = (currentUser, allStudents) => {
             if (!currentUser || !allStudents) return [];
             const candidates = allStudents.filter(s => s.id !== currentUser.id);
@@ -142,6 +145,8 @@
                 return { ...student, affinityScore: score };
             });
             scoredCandidates.sort((a, b) => b.affinityScore - a.affinityScore);
+            
+            // Display Top 25 + Random 5
             const topPicks = scoredCandidates.slice(0, 25);
             const rest = scoredCandidates.slice(25);
             const randomPicks = [];
@@ -156,7 +161,6 @@
             return [...topPicks, ...randomPicks].sort(() => Math.random() - 0.5);
         };
 
-        // --- Updated Matching Algorithm for Strict 3-5 Members ---
         const runWeightedMatchingAlgorithm = (students, votes) => {
             if (!students || students.length === 0) return [];
             const W_MUTUAL_LOVE=1000, W_ONE_WAY_LOVE=100, W_TAG_MATCH=5, W_CAT_MATCH=3;
@@ -254,29 +258,20 @@
             });
             groups = balancedGroups;
 
-            // If we have homeless, try to form a new group if enough
-            if (homeless.length >= MIN_SIZE) {
-                groups.push(homeless);
-                homeless = [];
-            }
-
-            // 5. Final Rebalancing (CRITICAL: Fix < 3 groups)
-            // If homeless remains (1 or 2 people), OR any existing group is < 3
-            // We must steal from 5-person groups.
-            
-            // Add homeless to "small groups" list effectively
+            // If we have homeless, add them to be rebalanced
             if (homeless.length > 0) groups.push(homeless);
 
-            // Repeat balancing until all >= 3
+            // 5. Final Rebalancing (CRITICAL: Fix < 3 groups)
+            // If any group is < 3, steal from 5-person groups or merge.
             let iterations = 0;
-            while(iterations < 50) { // Safety break
+            while(iterations < 50) { 
                 const smallGroups = groups.filter(g => g.length < 3);
                 if (smallGroups.length === 0) break; // All valid
 
-                // Take the smallest group
+                // Take the smallest group (e.g. size 1 or 2)
                 const targetGroup = smallGroups[0]; 
                 
-                // Try to steal from a rich group (size 5)
+                // Strategy 1: Steal from a rich group (size 5)
                 const richGroup = groups.find(g => g.length === 5);
                 
                 if (richGroup) {
@@ -284,31 +279,26 @@
                     const movedMember = richGroup.pop();
                     targetGroup.push(movedMember);
                 } else {
-                    // No size 5 groups. We might have only size 3 or 4.
-                    // If we have a size 4 group, we can steal 1 to make target larger?
-                    // target=2, rich=4 -> target=3, rich=3. OK.
+                    // Strategy 2: Steal from medium group (size 4) ONLY if target is size 1
                     const mediumGroup = groups.find(g => g.length === 4);
-                    if (mediumGroup && targetGroup.length < 3) { // Only steal if target is desperate
+                    if (mediumGroup && targetGroup.length < 2) { 
                         const movedMember = mediumGroup.pop();
                         targetGroup.push(movedMember);
                     } else {
-                        // All groups are 3 (or we have just one small group left and no one to steal from)
-                        // If we have [3, 3, 2] -> Merge 2 into 3s? -> [4, 4]
-                        // This happens if total N % 3 != 0 or similar constraints.
-                        // Force merge smallest into another group
-                        const groupToDissolve = groups.indexOf(targetGroup);
-                        if (groupToDissolve !== -1) {
-                            groups.splice(groupToDissolve, 1);
+                        // Strategy 3: Merge smallest into another group (even if it makes it 4 or 5)
+                        const groupToDissolveIdx = groups.indexOf(targetGroup);
+                        if (groupToDissolveIdx !== -1) {
+                            groups.splice(groupToDissolveIdx, 1);
+                            
                             // Distribute members to ANY group < 5
                             targetGroup.forEach(p => {
                                 const dest = groups.find(g => g.length < 5);
                                 if(dest) dest.push(p);
                                 else {
                                     // If all are 5, we are stuck. (e.g. 5, 5, 2 -> 12 people. optimal 4,4,4)
-                                    // Should trigger a split. 
-                                    // Simplified: Just push to first group to make 6, then split?
-                                    // Let's push to first group.
-                                    groups[0].push(p);
+                                    // Push to first group to make 6, then split loop will catch it later
+                                    if(groups.length > 0) groups[0].push(p);
+                                    else groups.push([p]); // Should not happen
                                 }
                             });
                         }
@@ -316,10 +306,10 @@
                 }
                 
                 // Check if any group became > 5 (due to forced merge) and split
-                const oversized = groups.findIndex(g => g.length > 5);
-                if(oversized !== -1) {
-                    const bigGroup = groups[oversized];
-                    groups.splice(oversized, 1);
+                const oversizedIdx = groups.findIndex(g => g.length > 5);
+                if(oversizedIdx !== -1) {
+                    const bigGroup = groups[oversizedIdx];
+                    groups.splice(oversizedIdx, 1);
                     // Split 6 -> 3,3
                     const half = Math.ceil(bigGroup.length / 2);
                     groups.push(bigGroup.slice(0, half));
@@ -390,51 +380,53 @@
             </div>
         );
 
-        const RosterStatus = ({ students }) => {
+        const RosterStatus = ({ students, onSelectStudent }) => {
             return (
                 <div className="mt-8 bg-gray-800 rounded-2xl p-6 border border-gray-700 overflow-x-auto">
-                <h3 className="text-sm font-bold text-gray-400 uppercase tracking-widest mb-4 flex items-center gap-2">
-                    <Users size={16}/> Class Roster Status
-                </h3>
-                <div className="flex gap-4 min-w-max pb-4">
-                    {CLASS_LIST.map(cls => (
-                        <div key={cls} className="bg-gray-900/50 rounded-xl p-3 border border-gray-700 w-32 flex-shrink-0">
-                            <div className="text-center font-bold text-gray-300 mb-2 border-b border-gray-700 pb-1">{cls}組</div>
-                            <div className="grid grid-cols-4 gap-1">
-                            {STUDENT_NUMBERS.map(num => {
-                                const student = students.find(s => s.classId === cls && s.studentNumber === num);
-                                // Check if submitted: comment exists or flagged
-                                const isRegistered = student && (student.comment || (student.topics && student.topics.length > 0));
-                                return (
-                                    <div 
-                                    key={num} 
-                                    className={`aspect-square flex items-center justify-center text-[9px] font-bold rounded-sm transition-all ${
-                                        isRegistered 
-                                        ? 'bg-green-500 text-white shadow-[0_0_8px_rgba(34,197,94,0.6)] scale-105' 
-                                        : 'bg-gray-800 text-gray-600'
-                                    }`}
-                                    title={`${cls}組${num}番`}
-                                    >
-                                    {num}
-                                    </div>
-                                );
-                            })}
+                    <h3 className="text-sm font-bold text-gray-400 uppercase tracking-widest mb-4 flex items-center gap-2">
+                        <Users size={16}/> Class Roster Status <span className="text-xs normal-case text-gray-500 ml-2">(緑色の番号クリックで詳細・削除)</span>
+                    </h3>
+                    <div className="flex gap-4 min-w-max pb-4">
+                        {CLASS_LIST.map(cls => (
+                            <div key={cls} className="bg-gray-900/50 rounded-xl p-3 border border-gray-700 w-32 flex-shrink-0">
+                                <div className="text-center font-bold text-gray-300 mb-2 border-b border-gray-700 pb-1">{cls}組</div>
+                                <div className="grid grid-cols-4 gap-1">
+                                {STUDENT_NUMBERS.map(num => {
+                                    const student = students.find(s => s.classId === cls && s.studentNumber === num);
+                                    const isRegistered = !!student;
+                                    const isSubmitted = student && (student.comment || (student.topics && student.topics.length > 0));
+                                    
+                                    return (
+                                        <button 
+                                            key={num} 
+                                            onClick={() => isRegistered ? onSelectStudent(student) : null}
+                                            className={`aspect-square flex items-center justify-center text-[9px] font-bold rounded-sm transition-all ${
+                                                !isRegistered ? 'bg-gray-800 text-gray-600 cursor-default' :
+                                                isSubmitted ? 'bg-green-500 text-white shadow-[0_0_8px_rgba(34,197,94,0.6)] scale-105 hover:bg-green-400' :
+                                                'bg-yellow-600 text-white hover:bg-yellow-500' // Registered but not submitted
+                                            }`}
+                                            title={isRegistered ? `${student.name} (${student.email})` : '未登録'}
+                                        >
+                                            {num}
+                                        </button>
+                                    );
+                                })}
+                                </div>
                             </div>
-                        </div>
-                    ))}
-                </div>
-                <div className="flex justify-end gap-4 mt-2 text-xs text-gray-500">
-                    <div className="flex items-center gap-2"><div className="w-3 h-3 bg-gray-800 rounded-sm"></div> 未入力</div>
-                    <div className="flex items-center gap-2"><div className="w-3 h-3 bg-green-500 rounded-sm shadow-[0_0_5px_rgba(34,197,94,0.6)]"></div> 入力済</div>
-                </div>
+                        ))}
+                    </div>
+                    <div className="flex justify-end gap-4 mt-2 text-xs text-gray-500">
+                        <div className="flex items-center gap-2"><div className="w-3 h-3 bg-gray-800 rounded-sm"></div> 未登録</div>
+                        <div className="flex items-center gap-2"><div className="w-3 h-3 bg-yellow-600 rounded-sm"></div> 登録のみ</div>
+                        <div className="flex items-center gap-2"><div className="w-3 h-3 bg-green-500 rounded-sm shadow-[0_0_5px_rgba(34,197,94,0.6)]"></div> 入力完了</div>
+                    </div>
                 </div>
             );
         };
 
-        const TeacherPanel = ({ phase, studentCount, handleMatching, handlePublish, reset, onExport, onImportData, students }) => {
-            const updatePhase = async (newPhase) => {
-                await setDoc(doc(db, 'system', 'config'), { phase: newPhase }, { merge: true });
-            };
+        const TeacherPanel = ({ phase, studentCount, handleMatching, handlePublish, reset, onExport, onImportData, students, onDeleteStudent, onDeleteAll, isDemoMode, setIsDemoMode, onGenerateDemo }) => {
+            const updatePhase = async (newPhase) => { await setDoc(doc(db, 'system', 'config'), { phase: newPhase }, { merge: true }); };
+            const [selectedStudent, setSelectedStudent] = useState(null);
 
             return (
                 <div className="bg-gray-900 text-white p-4 shadow-inner">
@@ -444,6 +436,20 @@
                                 <h2 className="text-sm font-bold text-gray-400 uppercase tracking-widest mb-1">Control Panel</h2>
                                 <div className="text-2xl font-bold flex items-center gap-3"><span>登録者数: {studentCount}名</span></div>
                             </div>
+
+                            {/* Demo Mode Toggle */}
+                            <div className="flex items-center gap-2 bg-gray-800 p-2 rounded-lg border border-gray-700">
+                                <button onClick={() => setIsDemoMode(!isDemoMode)} className="flex items-center gap-2 text-xs font-bold px-2">
+                                    {isDemoMode ? <ToggleRight size={24} className="text-green-400"/> : <ToggleLeft size={24} className="text-gray-500"/>}
+                                    Demo Mode
+                                </button>
+                                {isDemoMode && phase === PHASE.INPUT && (
+                                    <button onClick={onGenerateDemo} className="bg-gray-700 hover:bg-gray-600 text-xs px-3 py-1 rounded border border-gray-600 flex items-center gap-1">
+                                        <Database size={12}/> +50 Mock
+                                    </button>
+                                )}
+                            </div>
+
                             <div className="flex gap-2">
                                 {phase === PHASE.INPUT && (
                                     <button onClick={() => updatePhase(PHASE.CHECK)} className="bg-gradient-to-r from-green-500 to-emerald-600 px-6 py-3 rounded-xl font-bold shadow-lg hover:scale-105 transition flex items-center gap-2">
@@ -464,19 +470,44 @@
                                 {phase === PHASE.PUBLISH && (
                                     <>
                                         <button onClick={onExport} className="bg-blue-600 hover:bg-blue-500 px-6 py-3 rounded-xl font-bold shadow-lg transition flex items-center gap-2"><Download size={18}/> CSV出力</button>
-                                        <button onClick={reset} className="border border-red-500/50 text-red-400 hover:bg-red-500/10 px-6 py-3 rounded-xl font-bold transition">リセット</button>
+                                        <div className="flex flex-col gap-1">
+                                            <button onClick={reset} className="border border-red-500/50 text-red-400 hover:bg-red-500/10 px-4 py-2 rounded-lg font-bold text-xs transition">リセット</button>
+                                            <button onClick={onDeleteAll} className="bg-red-900/30 text-red-500 hover:bg-red-900/50 px-4 py-1 rounded-lg font-bold text-[10px] transition border border-red-900">全データ削除</button>
+                                        </div>
                                     </>
                                 )}
                             </div>
                         </div>
-                        {/* Import and Status only in INPUT */}
+                        {/* Status visible in INPUT phase */}
                         {phase === PHASE.INPUT && (
                             <>
                                 <DataImporter onImport={onImportData} />
-                                <RosterStatus students={students} />
+                                <RosterStatus students={students} onSelectStudent={setSelectedStudent} />
                             </>
                         )}
                     </div>
+                    {/* Student Detail Modal */}
+                    {selectedStudent && (
+                        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={() => setSelectedStudent(null)}>
+                            <div className="bg-white text-gray-800 p-6 rounded-2xl shadow-xl max-w-sm w-full" onClick={e => e.stopPropagation()}>
+                                <h3 className="font-bold text-lg mb-2">{selectedStudent.classId}組 {selectedStudent.studentNumber}番</h3>
+                                <div className="text-xl font-bold mb-4">{selectedStudent.name}</div>
+                                <div className="text-sm text-gray-500 mb-4 font-mono bg-gray-100 p-2 rounded">{selectedStudent.email}</div>
+                                <div className="text-sm mb-6">
+                                    <p><strong>カテゴリー:</strong> {CATEGORIES.find(c=>c.id===selectedStudent.category)?.name || selectedStudent.category}</p>
+                                    <p><strong>テーマ:</strong> {selectedStudent.theme}</p>
+                                </div>
+                                <div className="flex gap-2">
+                                    <button onClick={() => { onDeleteStudent(selectedStudent.id); setSelectedStudent(null); }} className="flex-1 bg-red-500 hover:bg-red-600 text-white py-3 rounded-xl font-bold flex items-center justify-center gap-2">
+                                        <Trash2 size={18}/> 登録抹消
+                                    </button>
+                                    <button onClick={() => setSelectedStudent(null)} className="flex-1 bg-gray-200 hover:bg-gray-300 text-gray-700 py-3 rounded-xl font-bold">
+                                        閉じる
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
                 </div>
             );
         };
@@ -584,14 +615,11 @@
                 if (dir === 'right') onVote(currentStudent.id, selections);
                 setTimeout(() => { setDirection(null); setCurrentIndex(prev => prev + 1); }, 400);
             };
-
             if (currentIndex >= candidates.length) return <div className="flex flex-col items-center justify-center h-[70vh] text-center p-6"><div className="bg-green-100 p-6 rounded-full mb-6 animate-bounce"><CheckCircle size={64} className="text-green-600" /></div><h2 className="text-2xl font-bold text-gray-800 mb-2">チェック完了！</h2><p className="text-gray-500">先生のマッチング開始をお待ちください。</p></div>;
-
             const categoryData = CATEGORIES.find(c => c.id === currentStudent.category) || CATEGORIES[0];
             let cardClass = "absolute inset-0 bg-white rounded-3xl shadow-2xl border border-gray-100 overflow-hidden flex flex-col transition-all duration-500 ease-out";
             if (direction === 'left') cardClass += " transform -translate-x-[150%] -rotate-12 opacity-0";
             else if (direction === 'right') cardClass += " transform translate-x-[150%] rotate-12 opacity-0";
-
             return (
                 <div className="flex flex-col items-center justify-center min-h-[85vh] p-4 overflow-hidden relative">
                     <div className="w-full max-w-md aspect-[3/4] relative">
@@ -625,7 +653,6 @@
                 </div>
             );
         };
-
         const ModernResultView = ({ currentUser, students, groups, isPublished }) => {
             if (!isPublished) return <div className="flex flex-col items-center justify-center min-h-[60vh] p-8 text-center"><h2 className="text-3xl font-black text-gray-800 mb-2">Analyzing...</h2><p className="text-gray-500">先生が最適なチームを構成中です。<br/>しばらくお待ちください。</p></div>;
             const myGroupIndex = groups.findIndex(g => g.includes(currentUser.id));
@@ -666,13 +693,13 @@
             const [phase, setPhase] = useState(PHASE.INPUT);
             const [groups, setGroups] = useState([]);
             const [errorMsg, setErrorMsg] = useState('');
+            const [isDemoMode, setIsDemoMode] = useState(false);
 
-            // Auto reload after 1 hour
             useEffect(() => {
                 const timer = setTimeout(() => {
                     console.log("Auto reloading...");
                     window.location.reload();
-                }, 3600000); // 1 hour = 60 * 60 * 1000
+                }, 3600000); 
                 return () => clearTimeout(timer);
             }, []);
 
@@ -697,30 +724,22 @@
 
             useEffect(() => {
                 if (!user || !currentUserData) return;
-
                 const unsubSystem = onSnapshot(doc(db, 'system', 'config'), (doc) => {
                     if (doc.exists()) setPhase(doc.data().phase || PHASE.INPUT);
                 });
-
                 const unsubStudents = onSnapshot(collection(db, 'users'), (snapshot) => {
-                    const loadedStudents = snapshot.docs
-                        .map(d => ({ id: d.id, ...d.data() }))
-                        .filter(u => u.role !== 'teacher' && u.role !== 'admin');
+                    const loadedStudents = snapshot.docs.map(d => ({ id: d.id, ...d.data() })).filter(u => u.role !== 'teacher' && u.role !== 'admin');
                     setStudents(loadedStudents);
                 });
-
-                // [FIX] Convert object array back to nested array for app usage
                 const unsubGroups = onSnapshot(doc(db, 'system', 'groups'), (doc) => {
                     if(doc.exists()) {
                         const rawList = doc.data().list || [];
-                        // Firestore stores as [{members:[]}, ...], convert back to [[], ...]
                         const formattedGroups = rawList.map(item => item.members || item); 
                         setGroups(formattedGroups);
                     } else {
                         setGroups([]);
                     }
                 });
-
                 return () => { unsubSystem(); unsubStudents(); unsubGroups(); };
             }, [user, currentUserData]);
 
@@ -730,100 +749,81 @@
                     setErrorMsg('');
                 } catch (error) {
                     console.error(error);
-                    if (error.code === 'auth/unauthorized-domain') {
-                        setErrorMsg(`【設定エラー】このドメイン (${window.location.hostname}) はFirebaseで許可されていません。Firebaseコンソールの Authentication > 設定 > 承認済みドメイン にこのドメインを追加してください。`);
-                    } else if (error.code === 'auth/api-key-not-valid' || error.message.includes('api-key-not-valid')) {
-                        setErrorMsg("【設定エラー】APIキーが正しくありません。index.html内の firebaseConfig を、Firebaseコンソールからコピーした本物の値に書き換えてください。");
-                    } else if (error.code === 'auth/popup-closed-by-user') {
-                        setErrorMsg("ログイン操作がキャンセルされました。");
-                    } else {
-                        setErrorMsg("ログインに失敗しました: " + error.message);
-                    }
+                    if (error.code === 'auth/unauthorized-domain') setErrorMsg(`【設定エラー】このドメイン (${window.location.hostname}) はFirebaseで許可されていません。Firebaseコンソールの Authentication > 設定 > 承認済みドメイン にこのドメインを追加してください。`);
+                    else if (error.code === 'auth/api-key-not-valid' || error.message.includes('api-key-not-valid')) setErrorMsg("【設定エラー】APIキーが正しくありません。index.html内の firebaseConfig を、Firebaseコンソールからコピーした本物の値に書き換えてください。");
+                    else if (error.code === 'auth/popup-closed-by-user') setErrorMsg("ログイン操作がキャンセルされました。");
+                    else setErrorMsg("ログインに失敗しました: " + error.message);
                 }
             };
-
             const handleLogout = () => signOut(auth);
-
             const handleSaveProfile = async (data) => {
                 if(!user) return;
-                if(currentUserData.role === 'teacher' || currentUserData.role === 'admin') {
-                    alert("【確認】管理者のため、データは保存されません（プレビューモード）");
-                    return;
-                }
+                if(currentUserData.role === 'teacher' || currentUserData.role === 'admin') { alert("【確認】管理者のため、データは保存されません（プレビューモード）"); return; }
                 await updateDoc(doc(db, 'users', user.email), { ...data, updatedAt: new Date() });
             };
-
             const handleVote = async (targetId, selections) => {
                 if(!user) return;
-                if(currentUserData.role === 'teacher' || currentUserData.role === 'admin') {
-                    console.log("Teacher vote ignored");
-                    return;
-                }
+                if(currentUserData.role === 'teacher' || currentUserData.role === 'admin') { console.log("Teacher vote ignored"); return; }
                 const userRef = doc(db, 'users', user.email);
                 const currentVotes = currentUserData.votes || {};
                 await updateDoc(userRef, { votes: { ...currentVotes, [targetId]: selections } });
             };
-
+            const handleGenerateMock = () => {
+                // Generate and save to Firestore
+                const mocks = generateMockStudents(50);
+                const batch = writeBatch(db);
+                mocks.forEach(data => {
+                    // Use fake emails for ID
+                    const ref = doc(db, 'users', `mock_${data.id}`); 
+                    // Add email field
+                    batch.set(ref, { ...data, email: `mock_${data.id}@example.com` }); 
+                });
+                batch.commit().then(() => alert("デモデータ50件を追加しました"));
+            };
             const handleImportData = async (dataList) => {
                 const batch = writeBatch(db);
-                dataList.forEach(data => {
-                    const ref = doc(db, 'users', data.email); 
-                    batch.set(ref, data, { merge: true }); 
-                });
+                dataList.forEach(data => { const ref = doc(db, 'users', data.email); batch.set(ref, data, { merge: true }); });
                 await batch.commit();
                 alert(`${dataList.length}件のデータを登録しました。既存の生徒入力データは保持されます。`);
             };
-
+            const handleDeleteStudent = async (studentId) => {
+                if(!confirm("本当にこの生徒を削除しますか？この操作は取り消せません。")) return;
+                await deleteDoc(doc(db, 'users', studentId)); // studentId is email
+            };
+            const handleDeleteAll = async () => {
+                if(!confirm("【警告】全生徒データを削除しますか？\nCSVによる再登録が必要になります。\n本当によろしいですか？")) return;
+                if(!confirm("最終確認：本当に削除しますか？")) return;
+                const batch = writeBatch(db);
+                students.forEach(s => { batch.delete(doc(db, 'users', s.id)); });
+                await batch.commit();
+                alert("全データを削除しました。");
+            };
             const handleMatching = async () => {
                 await updateDoc(doc(db, 'system', 'config'), { phase: PHASE.MATCHING });
                 const allVotes = {};
                 students.forEach(s => { if(s.votes) allVotes[s.id] = s.votes; });
                 const result = runWeightedMatchingAlgorithm(students, allVotes);
-                
-                // [FIX] Firestore doesn't support nested arrays. Convert to object array.
                 const firestoreData = result.map(group => ({ members: group }));
-                
                 await setDoc(doc(db, 'system', 'groups'), { list: firestoreData });
             };
-
-            const handlePublish = async () => {
-                await updateDoc(doc(db, 'system', 'config'), { phase: PHASE.PUBLISH });
-            };
-
+            const handlePublish = async () => { await updateDoc(doc(db, 'system', 'config'), { phase: PHASE.PUBLISH }); };
             const handleReset = async () => {
                 if(!confirm("本当にリセットしますか？")) return;
                 await updateDoc(doc(db, 'system', 'config'), { phase: PHASE.INPUT });
                 await setDoc(doc(db, 'system', 'groups'), { list: [] });
             };
 
-            // Export CSV
             const handleExportCSV = () => {
-                // Part 1: Student Data Headers
-                const studentHeaders = [
-                    'Team ID', 'Class', 'Number', 'Name', 'Email', 
-                    'Category', 'Theme', 'Topics', 'Approaches', 'Skills', 'Comment'
-                ];
-                
-                // Part 2: Team Data Headers (separated by spacers)
+                const studentHeaders = ['Team ID', 'Class', 'Number', 'Name', 'Email', 'Category', 'Theme', 'Topics', 'Approaches', 'Skills', 'Comment'];
                 const teamHeaders = ['', '', 'Team ID (List)', 'Member Emails'];
-                
-                // Initialize containers
                 const studentRows = [];
                 const teamRows = [];
 
                 groups.forEach((group, groupIdx) => {
                     const teamName = `TEAM ${groupIdx + 1}`;
-                    
-                    // -- Right Side: Team Email List --
-                    const teamEmails = group.map(sid => {
-                        const s = students.find(st => st.id === sid);
-                        return s ? s.email : '';
-                    }).filter(e => e).join(', ');
-                    
-                    // Add one row per team for the right side list
+                    const teamEmails = group.map(sid => { const s = students.find(st => st.id === sid); return s ? s.email : ''; }).filter(e => e).join(', ');
                     teamRows.push([teamName, `"${teamEmails}"`]);
 
-                    // -- Left Side: Detailed Student List --
                     group.forEach(studentId => {
                         const student = students.find(s => s.id === studentId);
                         if (student) {
@@ -831,37 +831,19 @@
                             const topicNames = (student.topics||[]).map(tid => TOPIC_TAGS.find(t => t.id === tid)?.name).join('|');
                             const approachNames = (student.approaches||[]).map(aid => APPROACH_TAGS.find(a => a.id === aid)?.name).join('|');
                             const skillNames = (student.skills||[]).join('|');
-                            
-                            studentRows.push([
-                                teamName, 
-                                student.classId, 
-                                student.studentNumber, 
-                                student.name, 
-                                student.email, 
-                                catName, 
-                                `"${student.theme||''}"`, 
-                                `"${topicNames}"`,
-                                `"${approachNames}"`, 
-                                `"${skillNames}"`, 
-                                `"${student.comment||''}"`
-                            ]);
+                            studentRows.push([teamName, student.classId, student.studentNumber, student.name, student.email, catName, `"${student.theme||''}"`, `"${topicNames}"`, `"${approachNames}"`, `"${skillNames}"`, `"${student.comment||''}"`]);
                         }
                     });
                 });
 
-                // Combine Left (Students) and Right (Teams) side by side
                 const maxRows = Math.max(studentRows.length, teamRows.length);
                 const combinedRows = [];
-                
-                // Add Header Row
                 combinedRows.push([...studentHeaders, ...teamHeaders].join(','));
 
                 for (let i = 0; i < maxRows; i++) {
                     const left = studentRows[i] ? studentRows[i].join(',') : new Array(studentHeaders.length).fill('').join(',');
-                    // Add 2 empty columns padding then the team data
                     const rightData = teamRows[i] ? teamRows[i].join(',') : ','; 
                     const right = teamRows[i] ? `, ,${rightData}` : ', , ,'; 
-
                     combinedRows.push(`${left}${right}`);
                 }
 
@@ -887,22 +869,17 @@
                 <div className="min-h-screen bg-gray-50 font-sans text-gray-800 selection:bg-blue-200">
                     <header className="bg-white/80 backdrop-blur-md border-b border-gray-200 sticky top-0 z-50">
                         <div className="max-w-4xl mx-auto px-4 h-16 flex justify-between items-center">
-                            <div className="flex items-center gap-2">
-                                <div className="bg-gradient-to-tr from-blue-500 to-purple-500 text-white p-2 rounded-xl shadow-lg"><Sparkles size={20} fill="white" /></div>
-                                <div><h1 className="font-bold text-gray-800 leading-tight">Team Match</h1></div>
-                            </div>
-                            <div className="flex items-center gap-3">
-                                <span className="text-xs font-bold px-3 py-1 bg-gray-100 rounded-full text-gray-600">{phase}</span>
-                                <button onClick={handleLogout} className="text-gray-400 hover:text-gray-600"><LogOut size={20}/></button>
-                            </div>
+                            <div className="flex items-center gap-2"><div className="bg-gradient-to-tr from-blue-500 to-purple-500 text-white p-2 rounded-xl shadow-lg"><Sparkles size={20} fill="white" /></div><div><h1 className="font-bold text-gray-800 leading-tight">Team Match</h1></div></div>
+                            <div className="flex items-center gap-3"><span className="text-xs font-bold px-3 py-1 bg-gray-100 rounded-full text-gray-600">{phase}</span><button onClick={handleLogout} className="text-gray-400 hover:text-gray-600"><LogOut size={20}/></button></div>
                         </div>
                     </header>
                     
                     {isTeacher && (
                         <TeacherPanel 
-                            phase={phase} setPhase={null} students={students} studentCount={students.length}
-                            handleMatching={handleMatching} handlePublish={handlePublish} onExport={handleExportCSV}
-                            reset={handleReset} onImportData={handleImportData}
+                            phase={phase} students={students} studentCount={students.length} 
+                            handleMatching={handleMatching} handlePublish={handlePublish} onExport={handleExportCSV} 
+                            reset={handleReset} onImportData={handleImportData} onDeleteStudent={handleDeleteStudent} onDeleteAll={handleDeleteAll} 
+                            isDemoMode={isDemoMode} setIsDemoMode={setIsDemoMode} onGenerateDemo={handleGenerateMock}
                         />
                     )}
 
@@ -914,14 +891,12 @@
                                 {phase === PHASE.CHECK && <CardStack currentUser={currentUserData} students={students} onVote={handleVote} />}
                             </div>
                         )}
-
                         {(phase === PHASE.MATCHING || phase === PHASE.PUBLISH) && (
                             <div className={isTeacher ? "border-4 border-green-500 rounded-xl m-4 relative overflow-hidden" : ""}>
                                 {isTeacher && <div className="absolute top-0 left-0 bg-green-500 text-white px-3 py-1 text-xs font-bold rounded-br-xl z-50 flex items-center gap-1"><Eye size={12}/> 生徒画面プレビュー</div>}
                                 <ModernResultView currentUser={currentUserData} students={students} groups={groups} isPublished={phase === PHASE.PUBLISH || isTeacher} />
                             </div>
                         )}
-                        
                         {isTeacher && (phase === PHASE.MATCHING || phase === PHASE.PUBLISH) && (
                             <div className="max-w-6xl mx-auto p-8 border-t border-gray-200 mt-8">
                                 <h3 className="font-black text-2xl mb-6 text-gray-800">全チーム一覧 (管理者用)</h3>
@@ -940,7 +915,6 @@
                 </div>
             );
         };
-
         const root = createRoot(document.getElementById('root'));
         root.render(<App />);
     </script>
