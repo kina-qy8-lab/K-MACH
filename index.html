@@ -82,10 +82,6 @@
             { id: 'HUM_ART', group: '人文科学分野', name: '芸術・デザイン', color: 'from-rose-600 to-pink-500' },
         ];
 
-        // Updated TOPIC_TAGS with correct data and ID ranges
-        // T01-T28: Natural (Blue style)
-        // T29-T48: Social (Orange style)
-        // T49-T57: Humanities (Rose style)
         const TOPIC_TAGS = [
             { id: 'T01', name: '力学（身体の動き/スポーツ科学）' }, { id: 'T02', name: '力学（構造/滑空/浮力）' },
             { id: 'T03', name: '地震・防災' }, { id: 'T04', name: '建築' }, { id: 'T05', name: '紙飛行機' },
@@ -929,35 +925,27 @@
                 return () => clearTimeout(timer);
             }, []);
 
-            // 1. Auth Listener
             useEffect(() => {
-                const unsubscribe = onAuthStateChanged(auth, (u) => {
-                    setUser(u);
+                const unsubscribe = onAuthStateChanged(auth, async (u) => {
+                    if (u) {
+                        setUser(u);
+                        const userDoc = await getDoc(doc(db, 'users', u.email));
+                        if (userDoc.exists()) {
+                            setCurrentUserData(userDoc.data());
+                        } else {
+                            setErrorMsg("このアカウントは登録されていません。管理者に問い合わせてください。");
+                            signOut(auth);
+                        }
+                    } else {
+                        setUser(null);
+                        setCurrentUserData(null);
+                    }
                 });
                 return () => unsubscribe();
             }, []);
 
-            // 2. User Data Listener
             useEffect(() => {
-                if (!user) {
-                    setCurrentUserData(null);
-                    return;
-                }
-                const unsubUser = onSnapshot(doc(db, 'users', user.email), (docSnap) => {
-                    if (docSnap.exists()) {
-                        setCurrentUserData(docSnap.data());
-                    } else {
-                        setErrorMsg("このアカウントは登録されていません。管理者に問い合わせてください。");
-                        signOut(auth);
-                    }
-                }, (error) => {
-                     console.error("User listener error:", error);
-                });
-                return () => unsubUser();
-            }, [user]);
-
-            useEffect(() => {
-                if (!user) return;
+                if (!user || !currentUserData) return;
                 const unsubSystem = onSnapshot(doc(db, 'system', 'config'), (doc) => {
                     if (doc.exists()) setPhase(doc.data().phase || PHASE.INPUT);
                 });
@@ -965,17 +953,24 @@
                     const loadedStudents = snapshot.docs.map(d => ({ id: d.id, ...d.data() })).filter(u => u.role !== 'teacher' && u.role !== 'admin');
                     setStudents(loadedStudents);
                 });
+                // [FIX] Convert object array back to nested array for app usage
                 const unsubGroups = onSnapshot(doc(db, 'system', 'groups'), (doc) => {
                     if(doc.exists()) {
                         const rawList = doc.data().list || [];
-                        const formattedGroups = rawList.map(item => item.members || item); 
+                        const formattedGroups = rawList.map(item => {
+                            if (Array.isArray(item)) {
+                                return { members: item, metrics: {} };
+                            } else {
+                                return item;
+                            }
+                        });
                         setGroups(formattedGroups);
                     } else {
                         setGroups([]);
                     }
                 });
                 return () => { unsubSystem(); unsubStudents(); unsubGroups(); };
-            }, [user]);
+            }, [user, currentUserData]);
 
             const handleLogin = async () => {
                 try {
@@ -1142,13 +1137,12 @@
                                 {phase === PHASE.CHECK && <CardStack currentUser={currentUserData} students={students} onVote={handleVote} />}
                             </div>
                         )}
-                        {/* [MODIFIED] Hide preview for teacher completely during MATCHING and PUBLISH phases */}
-                        {!isTeacher && (phase === PHASE.MATCHING || phase === PHASE.PUBLISH) && (
-                            <div>
-                                <ModernResultView currentUser={currentUserData} students={students} groups={groups} isPublished={phase === PHASE.PUBLISH} />
+                        {(phase === PHASE.MATCHING || phase === PHASE.PUBLISH) && (
+                            <div className={isTeacher ? "border-4 border-green-500 rounded-xl m-4 relative overflow-hidden" : ""}>
+                                {isTeacher && <div className="absolute top-0 left-0 bg-green-500 text-white px-3 py-1 text-xs font-bold rounded-br-xl z-50 flex items-center gap-1"><Eye size={12}/> 生徒画面プレビュー</div>}
+                                <ModernResultView currentUser={currentUserData} students={students} groups={groups} isPublished={phase === PHASE.PUBLISH || isTeacher} />
                             </div>
                         )}
-                        
                         {isTeacher && (phase === PHASE.MATCHING || phase === PHASE.PUBLISH) && (
                             <div className="max-w-6xl mx-auto p-8 border-t border-gray-200 mt-8">
                                 <h3 className="font-black text-2xl mb-6 text-gray-800">全チーム一覧 (管理者用)</h3>
