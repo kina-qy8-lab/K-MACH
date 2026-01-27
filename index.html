@@ -35,7 +35,7 @@
       Users, Layers, Settings, RefreshCw, Star, Heart, ArrowRight, ArrowLeft,
       CheckCircle, X, Zap, Award, Smile, Sparkles, ThumbsUp, Lock, Unlock,
       Edit3, Lightbulb, Download, LogOut, Upload, Database, AlertCircle, Eye,
-      Trash2, ToggleLeft, ToggleRight, BarChart2
+      Trash2, ToggleLeft, ToggleRight, BarChart2, Move
     } from "lucide-react";
 
     // --- Firebase Imports & Config ---
@@ -156,7 +156,7 @@
       HUM_PHL: ["HUM_HIS"]
     };
 
-    const FIELD_MISMATCH_PENALTY = 2000; // 別分野混合をほぼ禁止にしたいなら大きめ
+    const FIELD_MISMATCH_PENALTY = 999999; // 【修正】分野不一致は絶対禁止のため極大化
     const CAT_MISSING_PENALTY = 400;     // categoryが空の人が混ざりやすいのを防ぐ
 
     // Weights (tune here)
@@ -212,6 +212,14 @@
       const f1 = getField(c1), f2 = getField(c2);
       if (f1 !== "UNK" && f2 !== "UNK" && f1 === f2) return 2;
       return 3;
+    };
+
+    // 【修正】分野一致チェック関数（絶対禁止用）
+    const isSameField = (c1, c2) => {
+      const f1 = getField(c1);
+      const f2 = getField(c2);
+      if (f1 === "UNK" || f2 === "UNK") return true; // 未入力は許容しないと組めなくなるので一旦許容
+      return f1 === f2;
     };
 
     // distに応じたカテゴリスコア（最優先の核）
@@ -451,11 +459,17 @@
 
       const wouldViolateInitCohesion = (group, candId) => {
         const next = [...group, candId];
+        
+        // 【修正】分野不一致の完全禁止
+        const candCat = byId[candId]?.category;
+        for (const mid of group) {
+          if (!isSameField(byId[mid]?.category, candCat)) return true;
+        }
+
         const st = groupCategoryStats(next);
 
         if (st.uniqCats > INIT_MAX_UNIQUE_CATS) return true;
 
-        const candCat = byId[candId]?.category;
         const rareInGroup = group.some(id => isRareCat(byId[id]?.category));
         const rareCand = isRareCat(candCat);
         const minPur = (rareInGroup || rareCand) ? 0.40 : INIT_MIN_PURITY;
@@ -537,6 +551,7 @@
             if (id2 === id) continue;
             const s2 = byId[id2];
             const d = categoryDistance(cat, s2.category);
+            if (d === 3) continue; // 【修正】別分野はカウントしない
             if (d <= 1) deg += 2;
             else if (d === 2) deg += 1;
           }
@@ -556,6 +571,7 @@
         const seedCat = byId[seedId]?.category;
 
         const consider = (id2, bonus = 0) => {
+          if (!isSameField(seedCat, byId[id2].category)) return; // 【修正】分野不一致は絶対禁止
           const sc = (ps[seedId]?.[id2] || -Infinity) + bonus;
           if (sc > bestSc) { bestSc = sc; best = id2; }
         };
@@ -634,6 +650,10 @@
           let bestFit = -Infinity;
 
           for (const cand of unassigned) {
+            // 【修正】分野不一致ならスキップ
+            const candCat = byId[cand].category;
+            if (!isSameField(byId[group[0]].category, candCat)) continue;
+
             const avgDist = (() => {
               const c = byId[cand].category;
               let sum = 0;
@@ -655,6 +675,9 @@
 
           if (!bestCand) {
             for (const cand of unassigned) {
+              const candCat = byId[cand].category;
+              if (!isSameField(byId[group[0]].category, candCat)) continue;
+
               const avgDist = (() => {
                 const c = byId[cand].category;
                 let sum = 0;
@@ -682,6 +705,9 @@
 
           if (!bestCand) {
             for (const cand of unassigned) {
+              const candCat = byId[cand].category;
+              if (!isSameField(byId[group[0]].category, candCat)) continue;
+
               if (wouldViolateInitCohesion(group, cand)) continue;
               const sc = fitScore(cand, group);
               if (sc > bestFit) { bestFit = sc; bestCand = cand; }
@@ -711,6 +737,10 @@
 
         for (let i = 0; i < groups.length; i++) {
           if (groups[i].length >= MAX_SIZE) continue;
+          
+          // 【修正】プール再配置時も分野不一致禁止
+          const candCat = byId[pid]?.category;
+          if (groups[i].some(mid => !isSameField(byId[mid]?.category, candCat))) continue;
 
           const st = groupCategoryStats(groups[i]);
           const nextUniq = (() => {
@@ -741,6 +771,13 @@
           let best = -Infinity;
           for (let j = 0; j < groups.length; j++) {
             if (groups[j].length + small.length > MAX_SIZE) continue;
+            
+            // 【修正】マージ時も分野チェック
+            const canMerge = [...groups[j], ...small].every(id1 => 
+              [...groups[j], ...small].every(id2 => isSameField(byId[id1]?.category, byId[id2]?.category))
+            );
+            if (!canMerge) continue;
+
             const merged = [...groups[j], ...small];
             const sc = teamObjective(merged);
             if (sc > best) { best = sc; bestIdx = j; }
@@ -783,6 +820,14 @@
           const j = randInt(B.length);
           const aId = A[i], bId = B[j];
 
+          // 【修正】スワップ時も分野チェック
+          const catA = byId[aId]?.category;
+          const catB = byId[bId]?.category;
+          
+          const conflictA = B.some(mid => mid !== bId && !isSameField(byId[mid]?.category, catA));
+          const conflictB = A.some(mid => mid !== aId && !isSameField(byId[mid]?.category, catB));
+          if (conflictA || conflictB) continue;
+
           newGroups[gA][i] = bId;
           newGroups[gB][j] = aId;
         } else {
@@ -791,6 +836,10 @@
 
           const i = randInt(A.length);
           const aId = A[i];
+
+          // 【修正】移動時も分野チェック
+          const catA = byId[aId]?.category;
+          if (B.some(mid => !isSameField(byId[mid]?.category, catA))) continue;
 
           newGroups[gA].splice(i, 1);
           newGroups[gB].push(aId);
@@ -1001,7 +1050,6 @@
                   </button>
                 )}
               </div>
-
               <div className="flex gap-2">
                 {phase === PHASE.INPUT && (
                   <button onClick={() => updatePhase(PHASE.CHECK)} className="bg-gradient-to-r from-green-500 to-emerald-600 px-6 py-3 rounded-xl font-bold shadow-lg hover:scale-105 transition flex items-center gap-2">
@@ -1056,32 +1104,7 @@
             {(phase === PHASE.INPUT || phase === PHASE.CHECK) && <RosterStatus students={students} onSelectStudent={setSelectedStudent} phase={phase} />}
           </div>
 
-          {selectedStudent && (
-            <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={() => setSelectedStudent(null)}>
-              <div className="bg-white text-gray-800 p-6 rounded-2xl shadow-xl max-w-sm w-full" onClick={(e) => e.stopPropagation()}>
-                <h3 className="font-bold text-lg mb-2">{selectedStudent.classId}組 {selectedStudent.studentNumber}番</h3>
-                <div className="text-xl font-bold mb-4">{selectedStudent.name}</div>
-                <div className="text-sm text-gray-500 mb-4 font-mono bg-gray-100 p-2 rounded">{selectedStudent.email}</div>
-                <div className="text-sm mb-6">
-                  <p><strong>カテゴリー:</strong> {CATEGORIES.find(c => c.id === selectedStudent.category)?.name || selectedStudent.category}</p>
-                  <p><strong>テーマ:</strong> {selectedStudent.theme}</p>
-                  {phase === PHASE.CHECK && (
-                    <p className="mt-2 pt-2 border-t text-green-600 font-bold">
-                      チェック進捗: {selectedStudent.votes ? Object.keys(selectedStudent.votes).length : 0} / 30 件
-                    </p>
-                  )}
-                </div>
-                <div className="flex gap-2">
-                  <button onClick={() => { onDeleteStudent(selectedStudent.id); setSelectedStudent(null); }} className="flex-1 bg-red-500 hover:bg-red-600 text-white py-3 rounded-xl font-bold flex items-center justify-center gap-2">
-                    <Trash2 size={18} /> 登録抹消
-                  </button>
-                  <button onClick={() => setSelectedStudent(null)} className="flex-1 bg-gray-200 hover:bg-gray-300 text-gray-700 py-3 rounded-xl font-bold">
-                    閉じる
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
+          {/* TeacherPanel内のselectedStudentはRosterStatus用。App直下のモーダルと役割が重複するが、ここではRosterStatus用として機能させるために、setSelectedStudentをAppへリフトアップするか、App側で一括管理する方が良い。現状のコード構造に従い、App側で一括管理しているsetSelectedStudentにイベントを委譲する形になっているため、このTeacherPanel内にはModalを表示しない（Appコンポーネントで表示）*/}
         </div>
       );
     };
@@ -1559,6 +1582,8 @@
       const [groups, setGroups] = useState([]);
       const [errorMsg, setErrorMsg] = useState("");
       const [isDemoMode, setIsDemoMode] = useState(false);
+      const [selectedStudent, setSelectedStudent] = useState(null);
+      const [moveTargetGroup, setMoveTargetGroup] = useState("");
 
       useEffect(() => {
         const timer = setTimeout(() => {
@@ -1686,6 +1711,63 @@
         students.forEach(s => { batch.delete(doc(db, "users", s.id)); });
         await batch.commit();
         alert("全データを削除しました。");
+      };
+
+      // 【修正】管理画面でのカテゴリー変更
+      const handleUpdateCategory = async (studentId, newCategory) => {
+        await updateDoc(doc(db, "users", studentId), { category: newCategory });
+        // ローカルステートも即座に反映（RosterStatusの表示更新用）
+        setStudents(prev => prev.map(s => s.id === studentId ? { ...s, category: newCategory } : s));
+      };
+
+      // 【修正】管理画面でのチーム移動＆再計算
+      const handleMoveStudent = async (studentId, targetGroupIdx) => {
+        if (targetGroupIdx === "") return;
+        const idx = parseInt(targetGroupIdx);
+        
+        // 分野不一致チェック
+        const targetGroup = groups[idx].members || groups[idx];
+        const student = students.find(s => s.id === studentId);
+        const isCompatible = targetGroup.every(mid => {
+          const m = students.find(s => s.id === mid);
+          return isSameField(m?.category, student?.category);
+        });
+
+        if (!isCompatible && !confirm("【警告】移動先のチームとは「分野」が異なります！\n基本ルールでは禁止されていますが、強制的に移動しますか？")) {
+          return;
+        }
+
+        const newGroups = [...groups];
+        // 元のグループから削除
+        newGroups.forEach(g => {
+          if (Array.isArray(g)) {
+            const i = g.indexOf(studentId);
+            if (i !== -1) g.splice(i, 1);
+          } else {
+            const i = g.members.indexOf(studentId);
+            if (i !== -1) g.members.splice(i, 1);
+          }
+        });
+
+        // 新しいグループに追加
+        if (Array.isArray(newGroups[idx])) newGroups[idx].push(studentId);
+        else newGroups[idx].members.push(studentId);
+
+        // 全グループのMetrics再計算
+        const allVotes = {};
+        students.forEach(s => { if (s.votes) allVotes[s.id] = s.votes; });
+
+        const updatedFirestoreData = newGroups.map(g => {
+          const members = Array.isArray(g) ? g : g.members;
+          const memberObjs = members.map(mid => students.find(s => s.id === mid)).filter(Boolean);
+          const metrics = calculateTeamMetrics(memberObjs, students, allVotes);
+          return { members, metrics };
+        });
+
+        await setDoc(doc(db, "system", "groups"), { list: updatedFirestoreData });
+        setMoveTargetGroup("");
+        setSelectedStudent(null);
+        alert("移動完了。チームスコアを再計算しました。");
       };
 
       const handleMatching = async () => {
@@ -1879,7 +1961,10 @@
                             const s = students.find(st => st.id === sid);
                             const cat = CATEGORIES.find(c => c.id === s?.category) || CATEGORIES[0];
                             return (
-                              <li key={sid} className="flex items-center gap-3">
+                              <li key={sid} 
+                                  className="flex items-center gap-3 cursor-pointer hover:bg-gray-50 p-1 rounded transition"
+                                  onClick={() => setSelectedStudent(s)} // 【修正】生徒クリックで詳細表示
+                              >
                                 <div className={`w-8 h-8 rounded-full bg-gradient-to-br ${cat?.color} flex items-center justify-center text-white text-xs font-bold`}>{s?.name?.charAt(0) || "?"}</div>
                                 <div>
                                   <div className="font-bold text-sm text-gray-800">{s?.name}</div>
@@ -1905,6 +1990,94 @@
               </div>
             )}
           </main>
+
+          {/* Teacher Admin Modal (Shared for Input/Match phases) */}
+          {selectedStudent && (
+            <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={() => setSelectedStudent(null)}>
+              <div className="bg-white text-gray-800 p-6 rounded-2xl shadow-xl max-w-sm w-full overflow-y-auto max-h-[90vh]" onClick={(e) => e.stopPropagation()}>
+                <h3 className="font-bold text-lg mb-2">{selectedStudent.classId}組 {selectedStudent.studentNumber}番</h3>
+                <div className="text-xl font-bold mb-4">{selectedStudent.name}</div>
+                <div className="text-sm text-gray-500 mb-4 font-mono bg-gray-100 p-2 rounded">{selectedStudent.email}</div>
+                
+                <div className="text-sm mb-6 space-y-2">
+                  <div>
+                    <strong>カテゴリー:</strong> 
+                    {/* 【修正】管理画面でカテゴリー変更可能に */}
+                    {isTeacher ? (
+                      <select 
+                        className="ml-2 border border-gray-300 rounded p-1 text-xs"
+                        value={selectedStudent.category}
+                        onChange={(e) => handleUpdateCategory(selectedStudent.id, e.target.value)}
+                      >
+                        {CATEGORIES.map(c => <option key={c.id} value={c.id}>{c.group} : {c.name}</option>)}
+                      </select>
+                    ) : (
+                      <span className="ml-2">{CATEGORIES.find(c => c.id === selectedStudent.category)?.name || selectedStudent.category}</span>
+                    )}
+                  </div>
+                  <p><strong>テーマ:</strong> {selectedStudent.theme}</p>
+                  
+                  {/* 詳細情報表示（マッチング後確認用） */}
+                  <div className="bg-gray-50 p-2 rounded text-xs text-gray-600 mt-2">
+                    <div className="mb-1 font-bold">Topics:</div>
+                    <div className="flex flex-wrap gap-1 mb-2">
+                      {selectedStudent.topics?.map(tid => <span key={tid} className="bg-white border px-1 rounded">{TOPIC_TAGS.find(t=>t.id===tid)?.name}</span>)}
+                    </div>
+                    <div className="mb-1 font-bold">Skills:</div>
+                    <div className="flex flex-wrap gap-1">
+                      {selectedStudent.skills?.map(s => <span key={s} className="bg-white border px-1 rounded">{s}</span>)}
+                    </div>
+                  </div>
+
+                  {phase === PHASE.CHECK && (
+                    <p className="mt-2 pt-2 border-t text-green-600 font-bold">
+                      チェック進捗: {selectedStudent.votes ? Object.keys(selectedStudent.votes).length : 0} / 30 件
+                    </p>
+                  )}
+                </div>
+
+                {/* 【修正】チーム移動UI (Matching/Publish Phase) */}
+                {isTeacher && (phase === PHASE.MATCHING || phase === PHASE.PUBLISH) && (
+                  <div className="mb-6 p-3 bg-blue-50 rounded-xl border border-blue-100">
+                    <label className="block text-xs font-bold text-blue-700 mb-1 flex items-center gap-1">
+                      <Move size={12}/> チーム移動調整
+                    </label>
+                    <div className="flex gap-2">
+                      <select 
+                        className="flex-1 text-xs border border-gray-300 rounded p-2"
+                        value={moveTargetGroup}
+                        onChange={(e) => setMoveTargetGroup(e.target.value)}
+                      >
+                        <option value="">移動先を選択...</option>
+                        {groups.map((g, idx) => {
+                          const mems = g.members || g;
+                          return <option key={idx} value={idx}>TEAM {idx + 1} ({mems.length}名)</option>;
+                        })}
+                      </select>
+                      <button 
+                        onClick={() => handleMoveStudent(selectedStudent.id, moveTargetGroup)}
+                        disabled={moveTargetGroup === ""}
+                        className="bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold px-3 py-2 rounded disabled:opacity-50"
+                      >
+                        移動
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                <div className="flex gap-2">
+                  {(phase === PHASE.INPUT || phase === PHASE.CHECK) && (
+                    <button onClick={() => { onDeleteStudent(selectedStudent.id); setSelectedStudent(null); }} className="flex-1 bg-red-500 hover:bg-red-600 text-white py-3 rounded-xl font-bold flex items-center justify-center gap-2">
+                      <Trash2 size={18} /> 登録抹消
+                    </button>
+                  )}
+                  <button onClick={() => setSelectedStudent(null)} className="flex-1 bg-gray-200 hover:bg-gray-300 text-gray-700 py-3 rounded-xl font-bold">
+                    閉じる
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
 
           <footer className="py-6 text-center text-gray-300 text-xs font-bold uppercase tracking-widest">
             Quest Learning Matcher v2.0
