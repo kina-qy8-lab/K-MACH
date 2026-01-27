@@ -1026,9 +1026,9 @@
       );
     };
 
-    const TeacherPanel = ({ phase, studentCount, handleMatching, handlePublish, reset, onExport, onImportData, students, onDeleteStudent, onDeleteAll, isDemoMode, setIsDemoMode, onGenerateDemo }) => {
+    const TeacherPanel = ({ phase, studentCount, handleMatching, handlePublish, reset, onExport, onImportData, students, onDeleteStudent, onDeleteAll, isDemoMode, setIsDemoMode, onGenerateDemo, onSelectStudent }) => {
       const updatePhase = async (newPhase) => { await setDoc(doc(db, "system", "config"), { phase: newPhase }, { merge: true }); };
-      const [selectedStudent, setSelectedStudent] = useState(null);
+      // const [selectedStudent, setSelectedStudent] = useState(null); // Parent state handles this now
 
       return (
         <div className="bg-gray-900 text-white p-4 shadow-inner">
@@ -1101,10 +1101,8 @@
             </div>
 
             {phase === PHASE.INPUT && <DataImporter onImport={onImportData} />}
-            {(phase === PHASE.INPUT || phase === PHASE.CHECK) && <RosterStatus students={students} onSelectStudent={setSelectedStudent} phase={phase} />}
+            {(phase === PHASE.INPUT || phase === PHASE.CHECK) && <RosterStatus students={students} onSelectStudent={onSelectStudent} phase={phase} />}
           </div>
-
-          {/* TeacherPanel内のselectedStudentはRosterStatus用。App直下のモーダルと役割が重複するが、ここではRosterStatus用として機能させるために、setSelectedStudentをAppへリフトアップするか、App側で一括管理する方が良い。現状のコード構造に従い、App側で一括管理しているsetSelectedStudentにイベントを委譲する形になっているため、このTeacherPanel内にはModalを表示しない（Appコンポーネントで表示）*/}
         </div>
       );
     };
@@ -1916,6 +1914,7 @@
               isDemoMode={isDemoMode}
               setIsDemoMode={setIsDemoMode}
               onGenerateDemo={handleGenerateMock}
+              onSelectStudent={setSelectedStudent}
             />
           )}
 
