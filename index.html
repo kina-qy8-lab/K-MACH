@@ -5,19 +5,23 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>K-MATCH</title>
 
+  <!-- スタイルとBabelの読み込み -->
   <script src="https://cdn.tailwindcss.com"></script>
-  <!-- React & Babel -->
-  <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
-  <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-  <!-- Lucide Icons (React版ではなく素のLucideまたはUMD版を使う手もあるが、ここではesm.shではなくUNPKGからUMD版を取得しグローバル展開するヘルパーを使う) -->
-  <script src="https://unpkg.com/lucide@latest"></script>
-  <script src="https://unpkg.com/lucide-react/dist/lucide-react.min.js"></script>
 
-  <!-- Firebase SDKs (Compat版を使用することでCDNからの利用を容易にする) -->
-  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+  <!-- Import Map: ライブラリの場所を定義 -->
+  <script type="importmap">
+  {
+    "imports": {
+      "react": "https://esm.sh/react@18.2.0",
+      "react-dom/client": "https://esm.sh/react-dom@18.2.0/client",
+      "lucide-react": "https://esm.sh/lucide-react@0.263.1",
+      "firebase/app": "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js",
+      "firebase/auth": "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js",
+      "firebase/firestore": "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js"
+    }
+  }
+  </script>
 
   <style>body { font-family: sans-serif; }</style>
 </head>
@@ -25,24 +29,27 @@
 <body class="bg-gray-50 text-slate-800">
   <div id="root"></div>
 
-  <!-- 1. グローバル変数の準備 (React, Icons) -->
-  <script type="text/babel" src="./js/globals.js"></script>
+  <!-- メインスクリプト: ここで順番にファイルを読み込みます -->
+  <script type="text/babel" data-type="module">
+    // 1. グローバル変数とアイコンの準備
+    import "./js/globals.js";
+    
+    // 2. Firebase設定
+    import "./js/firebase-config.js";
 
-  <!-- 2. Firebase設定 -->
-  <script type="text/babel" src="./js/firebase-config.js"></script>
+    // 3. 定数データ
+    import "./js/data.js";
 
-  <!-- 3. 定数データ (CATEGORIES, TAGS) -->
-  <script type="text/babel" src="./js/data.js"></script>
+    // 4. ロジック
+    import "./js/logic.js";
 
-  <!-- 4. ロジック (マッチング計算) -->
-  <script type="text/babel" src="./js/logic.js"></script>
+    // 5. コンポーネント群（依存順に読み込み）
+    import "./js/components/Common.js";
+    import "./js/components/Student.js";
+    import "./js/components/Teacher.js";
 
-  <!-- 5. コンポーネント群 -->
-  <script type="text/babel" src="./js/components/Common.js"></script>
-  <script type="text/babel" src="./js/components/Student.js"></script>
-  <script type="text/babel" src="./js/components/Teacher.js"></script>
-
-  <!-- 6. メインアプリ -->
-  <script type="text/babel" src="./js/App.js"></script>
+    // 6. アプリ本体の起動
+    import "./js/App.js";
+  </script>
 </body>
 </html>
