@@ -28,11 +28,11 @@ const ModernInputForm = ({ currentUser, onSave }) => {
   if (isSubmitted) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[70vh] p-6 text-center">
-        <div className="bg-blue-50 p-6 rounded-full mb-6 animate-pulse"><CheckCircle size={64} className="text-blue-500" /></div>
+        <div className="bg-blue-50 p-6 rounded-full mb-6 animate-pulse"><window.CheckCircle size={64} className="text-blue-500" /></div>
         <h2 className="text-3xl font-black text-gray-800 mb-2">登録完了！</h2>
         <p className="text-gray-500 mb-8">先生からの合図があるまで、このままお待ちください。</p>
         <button onClick={() => setIsSubmitted(false)} className="flex items-center gap-2 text-gray-400 hover:text-gray-600 font-bold transition">
-          <Edit3 size={16} /> 修正する
+          <window.Edit3 size={16} /> 修正する
         </button>
       </div>
     );
@@ -47,7 +47,7 @@ const ModernInputForm = ({ currentUser, onSave }) => {
 
       <div className="space-y-8">
         <section className="bg-white p-6 rounded-3xl shadow-sm border border-gray-100 relative overflow-hidden">
-          <div className="absolute top-0 right-0 bg-gray-100 px-3 py-1 rounded-bl-xl text-xs text-gray-500 font-bold flex items-center gap-1"><Lock size={10} /> 固定情報</div>
+          <div className="absolute top-0 right-0 bg-gray-100 px-3 py-1 rounded-bl-xl text-xs text-gray-500 font-bold flex items-center gap-1"><window.Lock size={10} /> 固定情報</div>
           <div className="flex gap-4 mb-4">
             <div className="w-1/3">
               <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Class</label>
@@ -66,7 +66,7 @@ const ModernInputForm = ({ currentUser, onSave }) => {
 
           <div className="mb-4">
             <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-2 flex justify-between">
-              Category {isCategoryLocked ? <Lock size={12} /> : <Unlock size={12} className="text-green-500" />}
+              Category {isCategoryLocked ? <window.Lock size={12} /> : <window.Unlock size={12} className="text-green-500" />}
             </label>
             {isCategoryLocked ? (
               <div className={`p-3 rounded-xl bg-gradient-to-r ${currentCategory.color} text-white shadow-sm`}>
@@ -83,7 +83,7 @@ const ModernInputForm = ({ currentUser, onSave }) => {
 
           <div>
             <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-2 flex justify-between">
-              Research Theme {isThemeLocked ? <Lock size={12} /> : <Unlock size={12} className="text-green-500" />}
+              Research Theme {isThemeLocked ? <window.Lock size={12} /> : <window.Unlock size={12} className="text-green-500" />}
             </label>
             {isThemeLocked ? (
               <div className="w-full p-3 bg-gray-100 rounded-xl font-bold text-gray-700 text-sm leading-snug">{formData.theme}</div>
@@ -96,7 +96,7 @@ const ModernInputForm = ({ currentUser, onSave }) => {
 
         <section>
           <label className={sectionTitleClass}>
-            <Sparkles size={20} className="text-purple-500" /> トピックカードを選択（最大5つ）
+            <window.Sparkles size={20} className="text-purple-500" /> トピックカードを選択（最大5つ）
             <span className="ml-auto text-xs font-bold text-blue-500 bg-blue-50 px-2 py-1 rounded-full">{(formData.topics || []).length}/5</span>
           </label>
           <div className="flex flex-wrap gap-2">
@@ -110,7 +110,7 @@ const ModernInputForm = ({ currentUser, onSave }) => {
         </section>
 
         <section>
-          <label className={sectionTitleClass}><Settings size={20} className="text-green-500" /> アプローチ（複数可）</label>
+          <label className={sectionTitleClass}><window.Settings size={20} className="text-green-500" /> アプローチ（複数可）</label>
           <div className="flex flex-wrap gap-2">
             {window.APPROACH_TAGS.map(a => (
               <button key={a.id} onClick={() => toggleSelection("approaches", a.id)}
@@ -122,7 +122,7 @@ const ModernInputForm = ({ currentUser, onSave }) => {
         </section>
 
         <section>
-          <label className={sectionTitleClass}><Zap size={20} className="text-orange-500" /> スキル（複数可）</label>
+          <label className={sectionTitleClass}><window.Zap size={20} className="text-orange-500" /> スキル（複数可）</label>
           <div className="flex flex-wrap gap-2">
             {window.SKILLS.map(s => (
               <button key={s} onClick={() => toggleSelection("skills", s)}
@@ -134,7 +134,7 @@ const ModernInputForm = ({ currentUser, onSave }) => {
         </section>
 
         <section className="bg-white p-6 rounded-3xl shadow-sm border border-gray-100">
-          <label className={sectionTitleClass}><Smile size={20} className="text-pink-500" /> ひとこと</label>
+          <label className={sectionTitleClass}><window.Smile size={20} className="text-pink-500" /> ひとこと</label>
           <textarea className="w-full p-4 bg-gray-50 rounded-2xl text-gray-700 outline-none focus:ring-2 focus:ring-blue-500/20" rows="3"
             value={formData.comment} onChange={(e) => setFormData({ ...formData, comment: e.target.value })}
             placeholder="特にやりたいこと、こんな人（やる気やスキル）を募集！などを記述。" />
@@ -200,7 +200,7 @@ const CardStack = ({ currentUser, students, onVote }) => {
   if (currentIndex >= candidates.length) {
     return (
       <div className="flex flex-col items-center justify-center h-[70vh] text-center p-6">
-        <div className="bg-green-100 p-6 rounded-full mb-6 animate-bounce"><CheckCircle size={64} className="text-green-600" /></div>
+        <div className="bg-green-100 p-6 rounded-full mb-6 animate-bounce"><window.CheckCircle size={64} className="text-green-600" /></div>
         <h2 className="text-2xl font-bold text-gray-800 mb-2">チェック完了！</h2>
         <p className="text-gray-500">先生のマッチング開始をお待ちください。</p>
       </div>
@@ -228,18 +228,18 @@ const CardStack = ({ currentUser, students, onVote }) => {
           <div className="flex-1 p-6 flex flex-col gap-4 overflow-y-auto pb-32">
             {currentStudent.theme && (
               <div className="mb-2">
-                <h4 className="text-sm font-bold text-gray-800 mb-2 flex items-center gap-2 border-b border-gray-100 pb-1"><Lightbulb size={16} className="text-yellow-500" /> 今考えている題材</h4>
+                <h4 className="text-sm font-bold text-gray-800 mb-2 flex items-center gap-2 border-b border-gray-100 pb-1"><window.Lightbulb size={16} className="text-yellow-500" /> 今考えている題材</h4>
                 <div className="bg-yellow-50/50 p-4 rounded-xl border border-yellow-100 font-bold text-gray-800 leading-snug shadow-sm">{currentStudent.theme}</div>
               </div>
             )}
             <div>
-              <h4 className="text-sm font-bold text-gray-800 mb-2 flex items-center gap-2 border-b border-gray-100 pb-1"><Sparkles size={16} className="text-purple-500" /> トピック</h4>
+              <h4 className="text-sm font-bold text-gray-800 mb-2 flex items-center gap-2 border-b border-gray-100 pb-1"><window.Sparkles size={16} className="text-purple-500" /> トピック</h4>
               <div className="flex flex-wrap gap-2">
                 {currentStudent.topics?.map(tid => <span key={tid} className={`px-2 py-1 rounded-lg text-xs font-bold border ${window.getTagStyle(tid, false)}`}>{window.TOPIC_TAGS.find(t => t.id === tid)?.name}</span>)}
               </div>
             </div>
             <div>
-              <h4 className="text-sm font-bold text-gray-800 mb-2 flex items-center gap-2 border-b border-gray-100 pb-1"><Settings size={16} className="text-green-500" /> アプローチ</h4>
+              <h4 className="text-sm font-bold text-gray-800 mb-2 flex items-center gap-2 border-b border-gray-100 pb-1"><window.Settings size={16} className="text-green-500" /> アプローチ</h4>
               <div className="flex flex-wrap gap-2">
                 {currentStudent.approaches?.map(aid => {
                   const a = window.APPROACH_TAGS.find(t => t.id === aid);
@@ -248,22 +248,22 @@ const CardStack = ({ currentUser, students, onVote }) => {
               </div>
             </div>
             <div>
-              <h4 className="text-sm font-bold text-gray-800 mb-2 flex items-center gap-2 border-b border-gray-100 pb-1"><Zap size={16} className="text-orange-500" /> スキル</h4>
+              <h4 className="text-sm font-bold text-gray-800 mb-2 flex items-center gap-2 border-b border-gray-100 pb-1"><window.Zap size={16} className="text-orange-500" /> スキル</h4>
               <div className="flex flex-wrap gap-2">
                 {currentStudent.skills?.map(s => <span key={s} className="bg-purple-50 text-purple-700 px-2 py-1 rounded-lg text-xs font-bold border border-purple-100">{s}</span>)}
               </div>
             </div>
             <div className="mt-2">
-              <div className="text-sm font-bold text-gray-800 mb-2 flex items-center gap-2 border-b border-gray-100 pb-1"><Smile size={16} className="text-pink-500" /> ひとこと</div>
+              <div className="text-sm font-bold text-gray-800 mb-2 flex items-center gap-2 border-b border-gray-100 pb-1"><window.Smile size={16} className="text-pink-500" /> ひとこと</div>
               <div className="bg-gray-50 p-4 rounded-xl border border-gray-100 relative"><p className="text-sm text-gray-600 italic">"{currentStudent.comment}"</p></div>
             </div>
           </div>
           <div className="absolute bottom-0 left-0 right-0 bg-white/95 backdrop-blur-sm border-t p-4 pb-6 flex gap-2 justify-center">
-            <button onClick={() => handleSwipe("left")} className="flex-1 py-3 rounded-xl flex flex-col items-center transition border-2 border-gray-200 text-gray-400 hover:bg-red-50 hover:text-red-500 hover:border-red-200"><X size={20} /><span className="text-[10px] font-bold mt-1">スキップ</span></button>
-            <button onClick={() => toggleSelection("direction")} className={`flex-1 py-3 rounded-xl flex flex-col items-center transition border-2 ${selections.direction ? "bg-green-50 border-green-500 text-green-700" : "bg-gray-50 border-transparent text-gray-400 hover:bg-gray-100"}`}><CheckCircle size={20} className={selections.direction ? "fill-current" : ""} /><span className="text-[10px] font-bold mt-1">方向性</span></button>
-            <button onClick={() => toggleSelection("skill")} className={`flex-1 py-3 rounded-xl flex flex-col items-center transition border-2 ${selections.skill ? "bg-blue-50 border-blue-500 text-blue-700" : "bg-gray-50 border-transparent text-gray-400 hover:bg-gray-100"}`}><Zap size={20} className={selections.skill ? "fill-current" : ""} /><span className="text-[10px] font-bold mt-1">スキル</span></button>
-            <button onClick={() => toggleSelection("love")} className={`flex-1 py-3 rounded-xl flex flex-col items-center transition border-2 ${selections.love ? "bg-pink-50 border-pink-500 text-pink-700" : "bg-gray-50 border-transparent text-gray-400 hover:bg-gray-100"}`}><Heart size={20} className={selections.love ? "fill-current" : ""} /><span className="text-[10px] font-bold mt-1">組みたい</span></button>
-            <button onClick={() => handleSwipe("right")} disabled={!hasSelection} className={`flex-1 py-3 rounded-xl flex flex-col items-center transition border-2 ${hasSelection ? "bg-blue-600 text-white border-blue-600" : "bg-gray-200 text-gray-400 border-gray-200"}`}><ThumbsUp size={20} /><span className="text-[10px] font-bold mt-1">送信</span></button>
+            <button onClick={() => handleSwipe("left")} className="flex-1 py-3 rounded-xl flex flex-col items-center transition border-2 border-gray-200 text-gray-400 hover:bg-red-50 hover:text-red-500 hover:border-red-200"><window.X size={20} /><span className="text-[10px] font-bold mt-1">スキップ</span></button>
+            <button onClick={() => toggleSelection("direction")} className={`flex-1 py-3 rounded-xl flex flex-col items-center transition border-2 ${selections.direction ? "bg-green-50 border-green-500 text-green-700" : "bg-gray-50 border-transparent text-gray-400 hover:bg-gray-100"}`}><window.CheckCircle size={20} className={selections.direction ? "fill-current" : ""} /><span className="text-[10px] font-bold mt-1">方向性</span></button>
+            <button onClick={() => toggleSelection("skill")} className={`flex-1 py-3 rounded-xl flex flex-col items-center transition border-2 ${selections.skill ? "bg-blue-50 border-blue-500 text-blue-700" : "bg-gray-50 border-transparent text-gray-400 hover:bg-gray-100"}`}><window.Zap size={20} className={selections.skill ? "fill-current" : ""} /><span className="text-[10px] font-bold mt-1">スキル</span></button>
+            <button onClick={() => toggleSelection("love")} className={`flex-1 py-3 rounded-xl flex flex-col items-center transition border-2 ${selections.love ? "bg-pink-50 border-pink-500 text-pink-700" : "bg-gray-50 border-transparent text-gray-400 hover:bg-gray-100"}`}><window.Heart size={20} className={selections.love ? "fill-current" : ""} /><span className="text-[10px] font-bold mt-1">組みたい</span></button>
+            <button onClick={() => handleSwipe("right")} disabled={!hasSelection} className={`flex-1 py-3 rounded-xl flex flex-col items-center transition border-2 ${hasSelection ? "bg-blue-600 text-white border-blue-600" : "bg-gray-200 text-gray-400 border-gray-200"}`}><window.ThumbsUp size={20} /><span className="text-[10px] font-bold mt-1">送信</span></button>
           </div>
         </div>
       </div>
@@ -331,12 +331,12 @@ const ModernResultView = ({ currentUser, students, groups, isPublished }) => {
                   </div>
                   <div className="p-6 max-h-[60vh] overflow-y-auto">
                     <h3 className="text-xl font-bold mb-1">{selectedMember.name}<span className="text-sm text-gray-500 font-normal ml-2">{selectedMember.classId}組 {selectedMember.studentNumber}番</span></h3>
-                    {selectedMember.theme && (<div className="mb-4 mt-4"><h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1 flex items-center gap-1"><Lightbulb size={12} /> 今考えている題材</h4><div className="bg-yellow-50 p-3 rounded-xl border border-yellow-100 font-bold text-gray-800 text-sm">{selectedMember.theme}</div></div>)}
+                    {selectedMember.theme && (<div className="mb-4 mt-4"><h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1 flex items-center gap-1"><window.Lightbulb size={12} /> 今考えている題材</h4><div className="bg-yellow-50 p-3 rounded-xl border border-yellow-100 font-bold text-gray-800 text-sm">{selectedMember.theme}</div></div>)}
                     <div className="space-y-4 mt-4">
-                      <div><h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1 flex items-center gap-1"><Sparkles size={12} /> トピック</h4><div className="flex flex-wrap gap-1">{selectedMember.topics?.map(tid => <span key={tid} className={`px-2 py-1 rounded-md text-xs font-bold border ${window.getTagStyle(tid, false)}`}>{window.TOPIC_TAGS.find(t => t.id === tid)?.name}</span>)}</div></div>
-                      <div><h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1 flex items-center gap-1"><Settings size={12} /> アプローチ</h4><div className="flex flex-wrap gap-1">{selectedMember.approaches?.map(aid => { const a = window.APPROACH_TAGS.find(t => t.id === aid); return a ? <span key={aid} className="bg-green-50 text-green-700 px-2 py-1 rounded-md text-xs font-bold border border-green-100">{a.icon} {a.name}</span> : null; })}</div></div>
-                      <div><h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1 flex items-center gap-1"><Zap size={12} /> スキル</h4><div className="flex flex-wrap gap-1">{selectedMember.skills?.map(s => <span key={s} className="bg-purple-50 text-purple-700 px-2 py-1 rounded-md text-xs font-bold border border-purple-100">{s}</span>)}</div></div>
-                      <div><h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1 flex items-center gap-1"><Smile size={12} /> ひとこと</h4><div className="bg-gray-50 p-3 rounded-xl border border-gray-100 text-sm text-gray-600 italic">"{selectedMember.comment}"</div></div>
+                      <div><h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1 flex items-center gap-1"><window.Sparkles size={12} /> トピック</h4><div className="flex flex-wrap gap-1">{selectedMember.topics?.map(tid => <span key={tid} className={`px-2 py-1 rounded-md text-xs font-bold border ${window.getTagStyle(tid, false)}`}>{window.TOPIC_TAGS.find(t => t.id === tid)?.name}</span>)}</div></div>
+                      <div><h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1 flex items-center gap-1"><window.Settings size={12} /> アプローチ</h4><div className="flex flex-wrap gap-1">{selectedMember.approaches?.map(aid => { const a = window.APPROACH_TAGS.find(t => t.id === aid); return a ? <span key={aid} className="bg-green-50 text-green-700 px-2 py-1 rounded-md text-xs font-bold border border-green-100">{a.icon} {a.name}</span> : null; })}</div></div>
+                      <div><h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1 flex items-center gap-1"><window.Zap size={12} /> スキル</h4><div className="flex flex-wrap gap-1">{selectedMember.skills?.map(s => <span key={s} className="bg-purple-50 text-purple-700 px-2 py-1 rounded-md text-xs font-bold border border-purple-100">{s}</span>)}</div></div>
+                      <div><h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1 flex items-center gap-1"><window.Smile size={12} /> ひとこと</h4><div className="bg-gray-50 p-3 rounded-xl border border-gray-100 text-sm text-gray-600 italic">"{selectedMember.comment}"</div></div>
                     </div>
                   </div>
                   <div className="p-4 border-t border-gray-100 bg-gray-50 text-center"><button onClick={() => setSelectedMember(null)} className="bg-gray-800 text-white px-8 py-2 rounded-full font-bold text-sm hover:bg-gray-700 transition">閉じる</button></div>
@@ -350,7 +350,6 @@ const ModernResultView = ({ currentUser, students, groups, isPublished }) => {
   );
 };
 
-// グローバル公開
 window.ModernInputForm = ModernInputForm;
 window.CardStack = CardStack;
 window.ModernResultView = ModernResultView;
