@@ -2,7 +2,7 @@ const LoginScreen = ({ onLogin }) => (
   <div className="min-h-screen flex items-center justify-center bg-gray-100 p-4">
     <div className="bg-white p-8 rounded-3xl shadow-xl max-w-md w-full text-center">
       <div className="bg-blue-600 w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-6 shadow-lg shadow-blue-200">
-        <Sparkles size={32} className="text-white" />
+        <window.Sparkles size={32} className="text-white" />
       </div>
       <h1 className="text-2xl font-black text-gray-800 mb-2">K-MATCH</h1>
       <p className="text-gray-500 mb-8">Googleアカウントでログインしてください。<br />登録済みのユーザーのみ利用可能です。</p>
@@ -17,7 +17,7 @@ const RosterStatus = ({ students, onSelectStudent, phase }) => {
   return (
     <div className="mt-8 bg-gray-800 rounded-2xl p-6 border border-gray-700 overflow-x-auto">
       <h3 className="text-sm font-bold text-gray-400 uppercase tracking-widest mb-4 flex items-center gap-2">
-        <Users size={16} /> Class Roster Status <span className="text-xs normal-case text-gray-500 ml-2">(緑色の番号クリックで詳細・削除)</span>
+        <window.Users size={16} /> Class Roster Status <span className="text-xs normal-case text-gray-500 ml-2">(緑色の番号クリックで詳細・削除)</span>
       </h3>
       <div className="flex gap-4 min-w-max pb-4">
         {window.CLASS_LIST.map(cls => (
@@ -63,6 +63,5 @@ const RosterStatus = ({ students, onSelectStudent, phase }) => {
   );
 };
 
-// グローバル公開
 window.LoginScreen = LoginScreen;
 window.RosterStatus = RosterStatus;
