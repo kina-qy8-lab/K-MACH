@@ -1,19 +1,14 @@
 window.CATEGORIES = [
-  // 自然科学分野
   { id: "NAT_MAT", group: "自然科学分野", name: "物質・材料", color: "from-blue-500 to-cyan-400" },
   { id: "NAT_BIO", group: "自然科学分野", name: "生命・生物", color: "from-green-500 to-emerald-400" },
   { id: "NAT_EAR", group: "自然科学分野", name: "地球・環境", color: "from-teal-500 to-green-400" },
   { id: "NAT_PHY", group: "自然科学分野", name: "物理・工学", color: "from-indigo-500 to-blue-400" },
   { id: "NAT_INF", group: "自然科学分野", name: "数理・情報", color: "from-violet-500 to-purple-400" },
-
-  // 社会科学分野
   { id: "SOC_ECO", group: "社会科学分野", name: "経済・産業", color: "from-orange-500 to-amber-400" },
   { id: "SOC_PUB", group: "社会科学分野", name: "政策・行政・公共", color: "from-red-500 to-rose-400" },
   { id: "SOC_EDU", group: "社会科学分野", name: "教育・心理", color: "from-pink-500 to-rose-400" },
   { id: "SOC_SOC", group: "社会科学分野", name: "社会・文化", color: "from-fuchsia-500 to-pink-400" },
   { id: "SOC_INT", group: "社会科学分野", name: "国際・地理", color: "from-yellow-500 to-orange-400" },
-
-  // 人文科学分野
   { id: "HUM_HIS", group: "人文科学分野", name: "歴史・地域史", color: "from-amber-600 to-yellow-500" },
   { id: "HUM_LNG", group: "人文科学分野", name: "言語・コミュニケーション", color: "from-cyan-600 to-blue-500" },
   { id: "HUM_LIT", group: "人文科学分野", name: "文学・物語", color: "from-emerald-600 to-teal-500" },
