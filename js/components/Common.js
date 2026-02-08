@@ -63,5 +63,6 @@ const RosterStatus = ({ students, onSelectStudent, phase }) => {
   );
 };
 
+// コンポーネントをグローバルに公開
 window.LoginScreen = LoginScreen;
 window.RosterStatus = RosterStatus;
