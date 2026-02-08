@@ -1,39 +1,26 @@
-// Reactの機能をグローバルに展開
-window.useState = React.useState;
-window.useEffect = React.useEffect;
-window.useMemo = React.useMemo;
-window.useRef = React.useRef;
+import React, { useState, useEffect, useMemo, useRef } from "react";
+import * as LucideIcons from "lucide-react";
 
-// Lucide Reactアイコンの展開
-// UMD版のlucide-reactは window.lucideReact に格納されることが多い
-const Icons = window.lucideReact;
-window.Users = Icons.Users;
-window.Layers = Icons.Layers;
-window.Settings = Icons.Settings;
-window.RefreshCw = Icons.RefreshCw;
-window.Star = Icons.Star;
-window.Heart = Icons.Heart;
-window.ArrowRight = Icons.ArrowRight;
-window.ArrowLeft = Icons.ArrowLeft;
-window.CheckCircle = Icons.CheckCircle;
-window.X = Icons.X;
-window.Zap = Icons.Zap;
-window.Award = Icons.Award;
-window.Smile = Icons.Smile;
-window.Sparkles = Icons.Sparkles;
-window.ThumbsUp = Icons.ThumbsUp;
-window.Lock = Icons.Lock;
-window.Unlock = Icons.Unlock;
-window.Edit3 = Icons.Edit3;
-window.Lightbulb = Icons.Lightbulb;
-window.Download = Icons.Download;
-window.LogOut = Icons.LogOut;
-window.Upload = Icons.Upload;
-window.Database = Icons.Database;
-window.AlertCircle = Icons.AlertCircle;
-window.Eye = Icons.Eye;
-window.Trash2 = Icons.Trash2;
-window.ToggleLeft = Icons.ToggleLeft;
-window.ToggleRight = Icons.ToggleRight;
-window.BarChart2 = Icons.BarChart2;
-window.Move = Icons.Move;
+// Reactの機能をグローバル変数として公開（他のファイルから使えるようにする）
+window.React = React;
+window.useState = useState;
+window.useEffect = useEffect;
+window.useMemo = useMemo;
+window.useRef = useRef;
+
+// Lucideアイコンをグローバルに展開
+// 必要なアイコンを全てwindowオブジェクトに登録
+const iconList = [
+  "Users", "Layers", "Settings", "RefreshCw", "Star", "Heart", "ArrowRight", "ArrowLeft",
+  "CheckCircle", "X", "Zap", "Award", "Smile", "Sparkles", "ThumbsUp", "Lock", "Unlock",
+  "Edit3", "Lightbulb", "Download", "LogOut", "Upload", "Database", "AlertCircle", "Eye",
+  "Trash2", "ToggleLeft", "ToggleRight", "BarChart2", "Move"
+];
+
+iconList.forEach(name => {
+  if (LucideIcons[name]) {
+    window[name] = LucideIcons[name];
+  } else {
+    console.warn(`Icon ${name} not found in lucide-react`);
+  }
+});
