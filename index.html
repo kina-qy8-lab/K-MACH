@@ -39,7 +39,7 @@
     } from "lucide-react";
 
     // --- Firebase Imports & Config ---
-    import { initializeApp } from "firebase/app";
+    import { initializeFirestore } from "firebase/firestore";
     import { getAuth, signInWithPopup, GoogleAuthProvider, signOut, onAuthStateChanged } from "firebase/auth";
     import {
       getFirestore, collection, doc, getDoc, setDoc, updateDoc, deleteDoc,
@@ -59,7 +59,10 @@
     // Initialize Firebase
     const app = initializeApp(firebaseConfig);
     const auth = getAuth(app);
-    const db = getFirestore(app);
+    const db = initializeFirestore(app, {
+      experimentalAutoDetectLongPolling: true,
+      useFetchStreams: false,
+    });
 
     // --- Constants ---
     const CATEGORIES = [
