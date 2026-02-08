@@ -86,8 +86,8 @@ const App = () => {
 
   const handleLogin = async () => {
     try {
-      const provider = new firebase.auth.GoogleAuthProvider();
-      await window.auth.signInWithPopup(provider);
+      const provider = new window.firebaseAuth.GoogleAuthProvider();
+      await window.firebaseAuth.signInWithPopup(window.auth, provider);
       setErrorMsg("");
     } catch (error) {
       console.error(error);
@@ -314,7 +314,7 @@ const App = () => {
     return (
       <div className="min-h-screen flex items-center justify-center p-4">
         <div className="bg-red-50 text-red-600 p-6 rounded-xl border border-red-200 text-center">
-          <AlertCircle className="mx-auto mb-2" />{errorMsg}
+          <window.AlertCircle className="mx-auto mb-2" />{errorMsg}
         </div>
       </div>
     );
@@ -332,12 +332,12 @@ const App = () => {
       <header className="bg-white/80 backdrop-blur-md border-b border-gray-200 sticky top-0 z-50">
         <div className="max-w-4xl mx-auto px-4 h-16 flex justify-between items-center">
           <div className="flex items-center gap-2">
-            <div className="bg-gradient-to-tr from-blue-500 to-purple-500 text-white p-2 rounded-xl shadow-lg"><Sparkles size={20} fill="white" /></div>
+            <div className="bg-gradient-to-tr from-blue-500 to-purple-500 text-white p-2 rounded-xl shadow-lg"><window.Sparkles size={20} fill="white" /></div>
             <div><h1 className="font-bold text-gray-800 leading-tight">K-MATCH</h1></div>
           </div>
           <div className="flex items-center gap-3">
             <span className="text-xs font-bold px-3 py-1 bg-gray-100 rounded-full text-gray-600">{phase}</span>
-            <button onClick={handleLogout} className="text-gray-400 hover:text-gray-600"><LogOut size={20} /></button>
+            <button onClick={handleLogout} className="text-gray-400 hover:text-gray-600"><window.LogOut size={20} /></button>
           </div>
         </div>
       </header>
@@ -351,7 +351,7 @@ const App = () => {
       <main>
         {((!isTeacher) || (isTeacher && phase !== window.PHASE.MATCHING && phase !== window.PHASE.PUBLISH)) && (
           <div className={isTeacher ? "border-4 border-green-500 rounded-xl m-4 relative overflow-hidden bg-gray-100" : ""}>
-            {isTeacher && (<div className="absolute top-0 left-0 bg-green-500 text-white px-3 py-1 text-xs font-bold rounded-br-xl z-50 flex items-center gap-1"><Eye size={12} /> 生徒画面プレビュー (操作無効)</div>)}
+            {isTeacher && (<div className="absolute top-0 left-0 bg-green-500 text-white px-3 py-1 text-xs font-bold rounded-br-xl z-50 flex items-center gap-1"><window.Eye size={12} /> 生徒画面プレビュー (操作無効)</div>)}
             {phase === window.PHASE.INPUT && <window.ModernInputForm currentUser={currentUserData} onSave={handleSaveProfile} />}
             {phase === window.PHASE.CHECK && ((!pendingLoaded && !isTeacher) ? <div className="min-h-[60vh] flex items-center justify-center text-gray-500">Loading...</div> : <window.CardStack currentUser={currentUserForCheck} students={students} onVote={handleVote} />)}
           </div>
@@ -370,7 +370,7 @@ const App = () => {
                 const metrics = groupData.metrics || {};
                 return (
                   <div key={idx} className="bg-white rounded-2xl shadow-lg border border-gray-100 p-5 relative overflow-hidden">
-                    <div className="absolute top-0 right-0 bg-gray-100 px-3 py-1 rounded-bl-xl text-xs font-bold text-gray-500 flex items-center gap-2"><span>Score: {metrics.score}</span>{metrics.mutualPairs > 0 && <span className="text-pink-500 flex items-center gap-0.5"><Heart size={10} fill="currentColor" />{metrics.mutualPairs}</span>}</div>
+                    <div className="absolute top-0 right-0 bg-gray-100 px-3 py-1 rounded-bl-xl text-xs font-bold text-gray-500 flex items-center gap-2"><span>Score: {metrics.score}</span>{metrics.mutualPairs > 0 && <span className="text-pink-500 flex items-center gap-0.5"><window.Heart size={10} fill="currentColor" />{metrics.mutualPairs}</span>}</div>
                     <div className="flex justify-between items-center mb-4 pb-2 border-b border-gray-100"><h4 className="font-bold text-gray-700">TEAM {idx + 1}</h4><span className="bg-blue-100 text-blue-700 text-xs font-bold px-2 py-1 rounded-md">{group.length} Members</span></div>
                     <ul className="space-y-3">{group.map(sid => { const s = students.find(st => st.id === sid); const cat = window.getCategoryMeta(s?.category); return (<li key={sid} className="flex items-center gap-3 cursor-pointer hover:bg-gray-50 p-1 rounded transition" onClick={() => setSelectedStudent(s)}><div className={`w-8 h-8 rounded-full bg-gradient-to-br ${cat?.color} flex items-center justify-center text-white text-xs font-bold`}>{s?.name?.charAt(0) || "?"}</div><div><div className="font-bold text-sm text-gray-800">{s?.name}</div><div className="text-[10px] text-gray-400">{cat?.name}</div></div></li>); })}</ul>
                     <div className="mt-4 pt-3 border-t border-gray-50 flex justify-between text-[10px] text-gray-400"><div title="結束力">Con: {metrics.connection}</div><div title="共通関心">Int: {metrics.interest}</div><div title="多様性">Div: {metrics.diversity}</div><div title="カテゴリ純度 (dominant/size)">Pur: {metrics.purity}</div><div title="カテゴリ距離平均 (0が理想)">d̄: {metrics.avgCatDistance}</div>{metrics.crossFieldPairs > 0 && <div title="別分野ペア数" className="text-red-500 font-bold">XField: {metrics.crossFieldPairs}</div>}</div>
@@ -396,7 +396,7 @@ const App = () => {
             </div>
             {isTeacher && (phase === window.PHASE.MATCHING || phase === window.PHASE.PUBLISH) && (
               <div className="mb-6 p-3 bg-blue-50 rounded-xl border border-blue-100">
-                <label className="block text-xs font-bold text-blue-700 mb-1 flex items-center gap-1"><Move size={12} /> チーム移動調整</label>
+                <label className="block text-xs font-bold text-blue-700 mb-1 flex items-center gap-1"><window.Move size={12} /> チーム移動調整</label>
                 <div className="flex gap-2">
                   <select className="flex-1 text-xs border border-gray-300 rounded p-2" value={moveTargetGroup} onChange={(e) => setMoveTargetGroup(e.target.value)}><option value="">移動先を選択...</option><option value={NEW_TEAM_VALUE}>＋ 新しいTEAMを作成して移動</option>{groups.map((g, idx) => { const mems = g.members || g; return <option key={idx} value={idx}>TEAM {idx + 1} ({mems.length}名)</option>; })}</select>
                   <button onClick={() => handleMoveStudent(selectedStudent.id, moveTargetGroup)} disabled={moveTargetGroup === ""} className="bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold px-3 py-2 rounded disabled:opacity-50">移動</button>
@@ -404,7 +404,7 @@ const App = () => {
               </div>
             )}
             <div className="flex gap-2">
-              {(phase === window.PHASE.INPUT || phase === window.PHASE.CHECK) && (<button onClick={() => { handleDeleteStudent(selectedStudent.id); setSelectedStudent(null); }} className="flex-1 bg-red-500 hover:bg-red-600 text-white py-3 rounded-xl font-bold flex items-center justify-center gap-2"><Trash2 size={18} /> 登録抹消</button>)}
+              {(phase === window.PHASE.INPUT || phase === window.PHASE.CHECK) && (<button onClick={() => { handleDeleteStudent(selectedStudent.id); setSelectedStudent(null); }} className="flex-1 bg-red-500 hover:bg-red-600 text-white py-3 rounded-xl font-bold flex items-center justify-center gap-2"><window.Trash2 size={18} /> 登録抹消</button>)}
               <button onClick={() => setSelectedStudent(null)} className="flex-1 bg-gray-200 hover:bg-gray-300 text-gray-700 py-3 rounded-xl font-bold">閉じる</button>
             </div>
           </div>
