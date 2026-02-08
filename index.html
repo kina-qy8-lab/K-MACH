@@ -39,12 +39,22 @@
     } from "lucide-react";
 
     // --- Firebase Imports & Config ---
-    import { initializeFirestore } from "firebase/firestore";
-    import { getAuth, signInWithPopup, GoogleAuthProvider, signOut, onAuthStateChanged } from "firebase/auth";
+    import { initializeApp } from "firebase/app";
+    import { getAuth } from "firebase/auth";
     import {
-      getFirestore, collection, doc, getDoc, setDoc, updateDoc, deleteDoc,
+      initializeFirestore,
+      collection, doc, getDoc, setDoc, updateDoc, deleteDoc,
       onSnapshot, writeBatch
     } from "firebase/firestore";
+    
+    const app = initializeApp(firebaseConfig);
+    const auth = getAuth(app);
+    
+    // 待ち時間が出る環境なら「強制」がおすすめ
+    const db = initializeFirestore(app, {
+      experimentalForceLongPolling: true,
+      // useFetchStreams: false, // これは環境依存＆不要なら消してOK
+    });
 
     // 【重要】ここにFirebaseコンソールからコピーした設定値を貼り付けてください
     const firebaseConfig = {
