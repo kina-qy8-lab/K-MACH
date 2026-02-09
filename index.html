@@ -43,7 +43,7 @@
     import { getAuth, signInWithPopup, GoogleAuthProvider, signOut, onAuthStateChanged } from "firebase/auth";
     import {
       getFirestore, collection, doc, getDoc, setDoc, updateDoc, deleteDoc,
-      onSnapshot, writeBatch
+      onSnapshot, writeBatch, getDocs, serverTimestamp
     } from "firebase/firestore";
 
     // 【重要】ここにFirebaseコンソールからコピーした設定値を貼り付けてください
@@ -1083,6 +1083,10 @@
         keywords: ""
       });
 
+      // ★修正：保存時に“最新のフォーム値”を確実に参照する
+      const formRef = useRef(form);
+      useEffect(() => { formRef.current = form; }, [form]);
+
       useEffect(() => {
         if (!teamId) { setLoading(false); return; }
         const ref = doc(db, "teamSurveys", teamId);
@@ -1118,18 +1122,22 @@
         setSaving(true);
         try {
           const ref = doc(db, "teamSurveys", teamId);
+          const f = formRef.current || form;
+
           await setDoc(ref, {
             team: teamId,
-            topic: form.topic || "",
-            question: form.question || "",
-            metric: form.metric || "",
-            manipulate: form.manipulate || "",
-            control: form.control || "",
-            definition: form.definition || "",
-            keywords: form.keywords || "",
-            updatedAt: new Date(),
+            topic: (f.topic || ""),
+            question: (f.question || ""),
+            metric: (f.metric || ""),
+            manipulate: (f.manipulate || ""),
+            control: (f.control || ""),
+            definition: (f.definition || ""),
+            keywords: (f.keywords || ""),
+            // ★修正：updatedAt は serverTimestamp に
+            updatedAt: serverTimestamp(),
             updatedBy: currentUser?.email || currentUser?.id || ""
           }, { merge: true });
+
           alert("保存しました（チーム内で共有されます）");
         } catch (e) {
           console.error("team survey save error:", e);
@@ -1935,12 +1943,16 @@
       const [user, setUser] = useState(null);
       const [currentUserData, setCurrentUserData] = useState(null);
       const [students, setStudents] = useState([]);
+      const [studentsLoaded, setStudentsLoaded] = useState(false); // ★追加：CHECKでの先読み不足対策
       const [phase, setPhase] = useState(PHASE.INPUT);
       const [groups, setGroups] = useState([]);
       const [errorMsg, setErrorMsg] = useState("");
       const [isDemoMode, setIsDemoMode] = useState(false);
       const [selectedStudent, setSelectedStudent] = useState(null);
       const [moveTargetGroup, setMoveTargetGroup] = useState("");
+
+      // ★追加：自分のユーザdoc（登録確認）が読み込めたか
+      const [userDocLoaded, setUserDocLoaded] = useState(false);
 
       // 【追加】CHECK投票のバッファ（30件まとめて保存）
       const [pendingVotes, setPendingVotes] = useState({});
@@ -1968,38 +1980,53 @@
         return () => unsubscribe();
       }, []);
 
-      // User Data Listener
+      // User Data Listener（登録確認：ここが完了するまで重い購読を開始しない）
       useEffect(() => {
+        setUserDocLoaded(false);
+        setStudents([]);
+        setStudentsLoaded(false);
+
         if (!user) {
           setCurrentUserData(null);
           return;
         }
+
         const unsubUser = onSnapshot(doc(db, "users", user.email), (docSnap) => {
           if (docSnap.exists()) {
             setCurrentUserData(docSnap.data());
+            setErrorMsg("");
           } else {
             setErrorMsg("このアカウントは登録されていません。管理者に問い合わせてください。");
             signOut(auth);
           }
+          setUserDocLoaded(true);
         }, (error) => {
           console.error("User listener error:", error);
+          setUserDocLoaded(true);
         });
+
         return () => unsubUser();
       }, [user]);
 
+      // ★修正：system/config は「登録確認後」に購読開始（余計な初回負荷を避ける）
       useEffect(() => {
-        if (!user) return;
+        if (!user || !userDocLoaded || !currentUserData || errorMsg) return;
 
         const unsubSystem = onSnapshot(doc(db, "system", "config"), (docSnap) => {
           if (docSnap.exists()) setPhase(docSnap.data().phase || PHASE.INPUT);
         });
 
-        const unsubStudents = onSnapshot(collection(db, "users"), (snapshot) => {
-          const loadedStudents = snapshot.docs
-            .map(d => ({ id: d.id, ...d.data() }))
-            .filter(u => u.role !== "teacher" && u.role !== "admin");
-          setStudents(loadedStudents);
-        });
+        return () => { unsubSystem(); };
+      }, [user, userDocLoaded, currentUserData?.role, errorMsg]);
+
+      // ★修正：groups は teacher か、学生で MATCHING/PUBLISH のときだけ購読
+      useEffect(() => {
+        if (!user || !userDocLoaded || !currentUserData || errorMsg) { setGroups([]); return; }
+
+        const isTeacher = currentUserData.role === "teacher" || currentUserData.role === "admin";
+        const needGroups = isTeacher || phase === PHASE.MATCHING || phase === PHASE.PUBLISH;
+
+        if (!needGroups) { setGroups([]); return; }
 
         const unsubGroups = onSnapshot(doc(db, "system", "groups"), (docSnap) => {
           if (docSnap.exists()) {
@@ -2011,8 +2038,61 @@
           }
         });
 
-        return () => { unsubSystem(); unsubStudents(); unsubGroups(); };
-      }, [user]);
+        return () => { unsubGroups(); };
+      }, [user, userDocLoaded, currentUserData?.role, phase, errorMsg]);
+
+      // ★修正：students の取得方法
+      // - teacher: realtime (従来通り)
+      // - student: INPUT中は不要なので取得しない / CHECK等必要なときだけ「1回 getDocs」(realtime購読しない)
+      useEffect(() => {
+        if (!user || !userDocLoaded || !currentUserData || errorMsg) { setStudents([]); setStudentsLoaded(false); return; }
+
+        const isTeacher = currentUserData.role === "teacher" || currentUserData.role === "admin";
+        const needStudents = isTeacher || phase === PHASE.CHECK || phase === PHASE.MATCHING || phase === PHASE.PUBLISH;
+
+        if (!needStudents) {
+          setStudents([]);
+          setStudentsLoaded(false);
+          return;
+        }
+
+        // teacher: 従来通り realtime
+        if (isTeacher) {
+          setStudentsLoaded(false);
+          const unsubStudents = onSnapshot(collection(db, "users"), (snapshot) => {
+            const loadedStudents = snapshot.docs
+              .map(d => ({ id: d.id, ...d.data() }))
+              .filter(u => u.role !== "teacher" && u.role !== "admin");
+            setStudents(loadedStudents);
+            setStudentsLoaded(true);
+          }, (e) => {
+            console.error("Students snapshot error:", e);
+            setStudentsLoaded(true);
+          });
+
+          return () => { unsubStudents(); };
+        }
+
+        // student: 1回だけ取得（読み取り回数と更新追従を削減）
+        let cancelled = false;
+        (async () => {
+          setStudentsLoaded(false);
+          try {
+            const snap = await getDocs(collection(db, "users"));
+            if (cancelled) return;
+            const loaded = snap.docs
+              .map(d => ({ id: d.id, ...d.data() }))
+              .filter(u => u.role !== "teacher" && u.role !== "admin");
+            setStudents(loaded);
+          } catch (e) {
+            console.error("Students getDocs error:", e);
+          } finally {
+            if (!cancelled) setStudentsLoaded(true);
+          }
+        })();
+
+        return () => { cancelled = true; };
+      }, [user, userDocLoaded, currentUserData?.role, phase, errorMsg]);
 
       // 【追加】教員：teamSurveys を購読（回答状況確認＆CSV用）
       useEffect(() => {
@@ -2368,7 +2448,9 @@
           </div>
         );
       }
-      if (!currentUserData) return <div className="min-h-screen flex items-center justify-center">Loading...</div>;
+
+      // ★修正：user doc (登録確認) の読み込み完了まで軽量表示（無駄な購読開始を避ける）
+      if (!userDocLoaded || !currentUserData) return <div className="min-h-screen flex items-center justify-center">Loading...</div>;
 
       const isTeacher = currentUserData.role === "teacher" || currentUserData.role === "admin";
 
@@ -2427,8 +2509,9 @@
                   </div>
                 )}
                 {phase === PHASE.INPUT && <ModernInputForm currentUser={currentUserData} onSave={handleSaveProfile} />}
+
                 {phase === PHASE.CHECK && (
-                  (!pendingLoaded && !isTeacher)
+                  (!isTeacher && (!pendingLoaded || !studentsLoaded))
                     ? <div className="min-h-[60vh] flex items-center justify-center text-gray-500">Loading...</div>
                     : <CardStack currentUser={currentUserForCheck} students={students} onVote={handleVote} />
                 )}
