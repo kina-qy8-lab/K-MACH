@@ -1117,35 +1117,61 @@
         return () => unsub();
       }, [teamId]);
 
+      // ▼▼ TeamSurveyPanel 内の save 関数を丸ごと置換 ▼▼
       const save = async () => {
-        if (!teamId) return;
+        // teamId は念のためトリム（空白や不可視文字の事故防止）
+        const resolvedTeamId = String(teamId || "").trim();
+      
+        // 未入力でも必ず「文字列」に寄せる（undefined 混入を完全排除）
+        const f = formRef.current || form;
+        const asText = (v) => (v === null || v === undefined) ? "" : String(v);
+      
+        const payload = {
+          team: resolvedTeamId,
+          topic: asText(f.topic),
+          question: asText(f.question),
+          metric: asText(f.metric),
+          manipulate: asText(f.manipulate),
+          control: asText(f.control),
+          definition: asText(f.definition),
+          keywords: asText(f.keywords),
+          updatedAt: serverTimestamp(),
+          updatedBy: asText(currentUser?.email || currentUser?.uid || currentUser?.id || "")
+        };
+      
+        // ★もし teamId が空なら Firestore に保存できないので、端末に下書き保存する
+        const draftKey = `kmatch_teamSurveyDraft_${currentUser?.email || "anon"}_${resolvedTeamId || "NO_TEAM"}`;
+      
+        if (!resolvedTeamId) {
+          try { localStorage.setItem(draftKey, JSON.stringify({ ...payload, updatedAtLocal: Date.now() })); } catch (e) {}
+          alert("チームが未確定のため、端末に下書き保存しました。チーム確定後にもう一度「保存」を押してください。");
+          return;
+        }
+      
         setSaving(true);
         try {
-          const ref = doc(db, "teamSurveys", teamId);
-          const f = formRef.current || form;
-
-          await setDoc(ref, {
-            team: teamId,
-            topic: (f.topic || ""),
-            question: (f.question || ""),
-            metric: (f.metric || ""),
-            manipulate: (f.manipulate || ""),
-            control: (f.control || ""),
-            definition: (f.definition || ""),
-            keywords: (f.keywords || ""),
-            // ★修正：updatedAt は serverTimestamp に
-            updatedAt: serverTimestamp(),
-            updatedBy: currentUser?.email || currentUser?.id || ""
-          }, { merge: true });
-
+          const ref = doc(db, "teamSurveys", resolvedTeamId);
+          await setDoc(ref, payload, { merge: true });
+      
+          // 成功したら下書きを削除
+          try { localStorage.removeItem(draftKey); } catch (e) {}
+      
           alert("保存しました（チーム内で共有されます）");
         } catch (e) {
           console.error("team survey save error:", e);
-          alert("保存に失敗しました。通信状況を確認して再度お試しください。");
+      
+          // 失敗しても入力が消えないように端末へ退避
+          try { localStorage.setItem(draftKey, JSON.stringify({ ...payload, updatedAtLocal: Date.now() })); } catch (err) {}
+      
+          // ★原因が分かるようにエラーコード/メッセージを出す
+          const code = e?.code ? `\ncode: ${e.code}` : "";
+          const msg = e?.message ? `\nmessage: ${e.message}` : "";
+          alert("保存に失敗しました。未入力が原因とは限りません（権限・通信・ルールの可能性）。" + code + msg + "\n※入力内容は端末に下書き保存しました。");
         } finally {
           setSaving(false);
         }
       };
+      // ▲▲ TeamSurveyPanel 内の save 関数ここまで ▲▲
 
       const labelClass = "block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1";
       const inputClass = "w-full p-3 bg-gray-50 rounded-xl text-gray-800 outline-none focus:ring-2 focus:ring-blue-500/20 font-bold text-sm border border-gray-100";
