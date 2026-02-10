@@ -43,7 +43,7 @@
     import { getAuth, signInWithPopup, GoogleAuthProvider, signOut, onAuthStateChanged } from "firebase/auth";
     import {
       getFirestore, collection, doc, getDoc, setDoc, updateDoc, deleteDoc,
-      onSnapshot, writeBatch, getDocs, serverTimestamp
+      onSnapshot, writeBatch
     } from "firebase/firestore";
 
     // 【重要】ここにFirebaseコンソールからコピーした設定値を貼り付けてください
@@ -129,35 +129,6 @@
     ];
 
     const SKILLS = ["データ分析", "統計処理", "プログラミング", "英語文献読解", "実験手技", "工作・DIY", "デザイン", "動画編集", "リーダーシップ", "プレゼン"];
-
-    // ===============================
-    // 【追加】チームアンケート（TEAM 01〜78）
-    // ===============================
-    const TEAM_SURVEY_TEAMS = Array.from({ length: 78 }, (_, i) => `TEAM ${String(i + 1).padStart(2, "0")}`);
-
-    const toDateSafe = (v) => {
-      try {
-        if (!v) return null;
-        if (typeof v.toDate === "function") return v.toDate();
-        if (v instanceof Date) return v;
-        return new Date(v);
-      } catch (e) { return null; }
-    };
-
-    const fmtDateTime = (v) => {
-      const d = toDateSafe(v);
-      if (!d || isNaN(d.getTime())) return "";
-      const pad = (n) => String(n).padStart(2, "0");
-      return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
-    };
-
-    const escapeCsv = (val) => {
-      const s = (val === null || val === undefined) ? "" : String(val);
-      if (s.includes('"') || s.includes(",") || s.includes("\n") || s.includes("\r")) {
-        return `"${s.replace(/"/g, '""')}"`;
-      }
-      return s;
-    };
 
     // ===============================
     // Category distance settings
@@ -763,7 +734,7 @@
       // Fix sizes: ensure 3-5
       let pool = [];
       for (let i = groups.length - 1; i >= 0; i--) {
-        if (groups[i].length < 3) {
+        if (groups[i].length < MIN_SIZE) {
           pool.push(...groups[i]);
           groups.splice(i, 1);
         }
@@ -774,7 +745,7 @@
         let best = -Infinity;
 
         for (let i = 0; i < groups.length; i++) {
-          if (groups[i].length >= 5) continue;
+          if (groups[i].length >= MAX_SIZE) continue;
 
           // 【修正】プール再配置時も分野不一致禁止（未入力は許容）
           const candCat = byId[pid]?.category;
@@ -791,7 +762,7 @@
             return Object.keys(counts).length;
           })();
 
-          const uniqPenalty = Math.max(0, nextUniq - st.uniqCats) * 180;
+          const uniqPenalty = Math.max(0, nextUniq - st.uniqCats) * UNIQUE_CAT_PENALTY;
           const sc = fitScore(pid, groups[i]) - teamCohesionPenalty([...groups[i], pid]) - uniqPenalty;
 
           if (sc > best) { best = sc; bestIdx = i; }
@@ -802,12 +773,12 @@
       }
 
       for (let i = groups.length - 1; i >= 0; i--) {
-        if (groups[i].length < 3) {
+        if (groups[i].length < MIN_SIZE) {
           const small = groups.splice(i, 1)[0];
           let bestIdx = -1;
           let best = -Infinity;
           for (let j = 0; j < groups.length; j++) {
-            if (groups[j].length + small.length > 5) continue;
+            if (groups[j].length + small.length > MAX_SIZE) continue;
 
             // 【修正】マージ時も分野チェック（未入力は許容）
             const canMerge = [...groups[j], ...small].every(id1 =>
@@ -825,9 +796,9 @@
       }
 
       for (let i = groups.length - 1; i >= 0; i--) {
-        if (groups[i].length > 5) {
+        if (groups[i].length > MAX_SIZE) {
           const g = groups.splice(i, 1)[0];
-          while (g.length > 5) groups.push(g.splice(0, 4));
+          while (g.length > MAX_SIZE) groups.push(g.splice(0, IDEAL_SIZE));
           if (g.length) groups.push(g);
         }
       }
@@ -868,8 +839,8 @@
           newGroups[gA][i] = bId;
           newGroups[gB][j] = aId;
         } else {
-          if (A.length <= 3) continue;
-          if (B.length >= 5) continue;
+          if (A.length <= MIN_SIZE) continue;
+          if (B.length >= MAX_SIZE) continue;
 
           const i = randInt(A.length);
           const aId = A[i];
@@ -881,11 +852,11 @@
           newGroups[gA].splice(i, 1);
           newGroups[gB].push(aId);
 
-          if (newGroups[gA].length < 3) continue;
+          if (newGroups[gA].length < MIN_SIZE) continue;
         }
 
         newGroups = newGroups.filter(g => g.length > 0);
-        if (newGroups.some(g => g.length < 3 || g.length > 5)) continue;
+        if (newGroups.some(g => g.length < MIN_SIZE || g.length > MAX_SIZE)) continue;
 
         const obj = totalObjective(newGroups);
         if (obj > bestObj) {
@@ -1063,316 +1034,7 @@
       );
     };
 
-    // ===============================
-    // 【追加】チームアンケート（チーム共有）コンポーネント
-    // 保存先: teamSurveys/{TEAM xx}
-    // ===============================
-    const TeamSurveyPanel = ({ teamId, currentUser }) => {
-      const [loading, setLoading] = useState(true);
-      const [saving, setSaving] = useState(false);
-      const [meta, setMeta] = useState({ updatedAt: null, updatedBy: "" });
-
-      const [form, setForm] = useState({
-        team: teamId || "",
-        topic: "",
-        question: "",
-        metric: "",
-        manipulate: "",
-        control: "",
-        definition: "",
-        keywords: ""
-      });
-
-      // ★修正：保存時に“最新のフォーム値”を確実に参照する
-      const formRef = useRef(form);
-      useEffect(() => { formRef.current = form; }, [form]);
-
-      useEffect(() => {
-        if (!teamId) { setLoading(false); return; }
-        const ref = doc(db, "teamSurveys", teamId);
-        const unsub = onSnapshot(ref, (snap) => {
-          if (snap.exists()) {
-            const d = snap.data() || {};
-            setForm(prev => ({
-              ...prev,
-              team: teamId,
-              topic: d.topic || "",
-              question: d.question || "",
-              metric: d.metric || "",
-              manipulate: d.manipulate || "",
-              control: d.control || "",
-              definition: d.definition || "",
-              keywords: d.keywords || ""
-            }));
-            setMeta({ updatedAt: d.updatedAt || null, updatedBy: d.updatedBy || "" });
-          } else {
-            setForm(prev => ({ ...prev, team: teamId }));
-            setMeta({ updatedAt: null, updatedBy: "" });
-          }
-          setLoading(false);
-        }, (e) => {
-          console.error("team survey snapshot error:", e);
-          setLoading(false);
-        });
-        return () => unsub();
-      }, [teamId]);
-
-      // ▼▼ TeamSurveyPanel 内の save 関数を丸ごと置換 ▼▼
-      const save = async () => {
-        // teamId は念のためトリム（空白や不可視文字の事故防止）
-        const resolvedTeamId = String(teamId || "").trim();
-      
-        // 未入力でも必ず「文字列」に寄せる（undefined 混入を完全排除）
-        const f = formRef.current || form;
-        const asText = (v) => (v === null || v === undefined) ? "" : String(v);
-      
-        const payload = {
-          team: resolvedTeamId,
-          topic: asText(f.topic),
-          question: asText(f.question),
-          metric: asText(f.metric),
-          manipulate: asText(f.manipulate),
-          control: asText(f.control),
-          definition: asText(f.definition),
-          keywords: asText(f.keywords),
-          updatedAt: serverTimestamp(),
-          updatedBy: asText(currentUser?.email || currentUser?.uid || currentUser?.id || "")
-        };
-      
-        // ★もし teamId が空なら Firestore に保存できないので、端末に下書き保存する
-        const draftKey = `kmatch_teamSurveyDraft_${currentUser?.email || "anon"}_${resolvedTeamId || "NO_TEAM"}`;
-      
-        if (!resolvedTeamId) {
-          try { localStorage.setItem(draftKey, JSON.stringify({ ...payload, updatedAtLocal: Date.now() })); } catch (e) {}
-          alert("チームが未確定のため、端末に下書き保存しました。チーム確定後にもう一度「保存」を押してください。");
-          return;
-        }
-      
-        setSaving(true);
-        try {
-          const ref = doc(db, "teamSurveys", resolvedTeamId);
-          await setDoc(ref, payload, { merge: true });
-      
-          // 成功したら下書きを削除
-          try { localStorage.removeItem(draftKey); } catch (e) {}
-      
-          alert("保存しました（チーム内で共有されます）");
-        } catch (e) {
-          console.error("team survey save error:", e);
-      
-          // 失敗しても入力が消えないように端末へ退避
-          try { localStorage.setItem(draftKey, JSON.stringify({ ...payload, updatedAtLocal: Date.now() })); } catch (err) {}
-      
-          // ★原因が分かるようにエラーコード/メッセージを出す
-          const code = e?.code ? `\ncode: ${e.code}` : "";
-          const msg = e?.message ? `\nmessage: ${e.message}` : "";
-          alert("保存に失敗しました。未入力が原因とは限りません（権限・通信・ルールの可能性）。" + code + msg + "\n※入力内容は端末に下書き保存しました。");
-        } finally {
-          setSaving(false);
-        }
-      };
-      // ▲▲ TeamSurveyPanel 内の save 関数ここまで ▲▲
-
-      const labelClass = "block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1";
-      const inputClass = "w-full p-3 bg-gray-50 rounded-xl text-gray-800 outline-none focus:ring-2 focus:ring-blue-500/20 font-bold text-sm border border-gray-100";
-      const helpClass = "text-[11px] text-gray-500 mt-1 leading-relaxed";
-
-      if (loading) {
-        return (
-          <div className="bg-white rounded-3xl shadow-sm border border-gray-100 p-6 mt-10">
-            <div className="flex items-center gap-2 text-gray-500"><BarChart2 size={16}/> アンケート読み込み中...</div>
-          </div>
-        );
-      }
-
-      return (
-        <div className="bg-white rounded-3xl shadow-sm border border-gray-100 p-6 mt-10">
-          <div className="flex items-center justify-between gap-2 mb-4">
-            <h3 className="text-lg font-black text-gray-800 flex items-center gap-2">
-              <BarChart2 size={18} className="text-blue-600" /> チームアンケート（共有）
-            </h3>
-            <div className="text-[11px] text-gray-400 text-right">
-              {meta.updatedAt ? (
-                <>
-                  <div>最終更新: {fmtDateTime(meta.updatedAt)}</div>
-                  <div>更新者: {meta.updatedBy || "—"}</div>
-                </>
-              ) : (
-                <div>未入力（最初の保存でチーム回答が作成されます）</div>
-              )}
-            </div>
-          </div>
-
-          <div className="space-y-4">
-            {/* TEAM dropdown (表示はするが、チーム共有の整合性のため基本は固定) */}
-            <div>
-              <label className={labelClass}>チーム（固定）</label>
-              <select
-                className={inputClass}
-                value={teamId || ""}
-                disabled
-                onChange={() => {}}
-              >
-                <option value="">（チームが確定していません）</option>
-                {TEAM_SURVEY_TEAMS.map(t => <option key={t} value={t}>{t}</option>)}
-              </select>
-              <div className={helpClass}>※チーム回答として保存するため、所属チームに固定されています。</div>
-            </div>
-
-            <div>
-              <label className={labelClass}>題材（短文回答）</label>
-              <input
-                className={inputClass}
-                value={form.topic}
-                onChange={(e) => setForm(prev => ({ ...prev, topic: e.target.value }))}
-                placeholder="例：日焼け止めの効果的な使い方"
-              />
-            </div>
-
-            <div>
-              <label className={labelClass}>問い（短文回答）</label>
-              <input
-                className={inputClass}
-                value={form.question}
-                onChange={(e) => setForm(prev => ({ ...prev, question: e.target.value }))}
-                placeholder="例：○○すると△△はどれくらい変化するか？"
-              />
-              <div className={helpClass}>
-                ※問いは「何を比べるか」「何が変化するか」が分かる形に。できれば “操作する条件” と “測る指標” が読み取れる文章に。
-              </div>
-            </div>
-
-            <div>
-              <label className={labelClass}>測る指標・数（短文回答）</label>
-              <input
-                className={inputClass}
-                value={form.metric}
-                onChange={(e) => setForm(prev => ({ ...prev, metric: e.target.value }))}
-                placeholder="例：UV透過率(%), 皮膚温(℃), 回数(回/分) など"
-              />
-            </div>
-
-            <div>
-              <label className={labelClass}>操作する条件（短文回答）</label>
-              <input
-                className={inputClass}
-                value={form.manipulate}
-                onChange={(e) => setForm(prev => ({ ...prev, manipulate: e.target.value }))}
-                placeholder="例：塗布量, 塗る回数, 時間, 角度, 速度 など"
-              />
-            </div>
-
-            <div>
-              <label className={labelClass}>揃えるべき条件（量・時間・環境等）（短文回答）</label>
-              <input
-                className={inputClass}
-                value={form.control}
-                onChange={(e) => setForm(prev => ({ ...prev, control: e.target.value }))}
-                placeholder="例：同じ場所/同じ照度/同じ温度, 同じ被験者条件 など"
-              />
-            </div>
-
-            <div>
-              <label className={labelClass}>用語の定義（長文回答）</label>
-              <textarea
-                className={inputClass}
-                rows="5"
-                value={form.definition}
-                onChange={(e) => setForm(prev => ({ ...prev, definition: e.target.value }))}
-                placeholder="例：「効果」とは○○を△△したときの指標が□□以上改善すること、など"
-              />
-              <div className={helpClass}>
-                ※「効果」「成功」「良い」など曖昧な言葉は禁止！<br/>
-                何をどの値で判定するか（閾値・条件・比較対象）を定義してください。
-              </div>
-            </div>
-
-            <div>
-              <label className={labelClass}>キーワード（短文回答）</label>
-              <input
-                className={inputClass}
-                value={form.keywords}
-                onChange={(e) => setForm(prev => ({ ...prev, keywords: e.target.value }))}
-                placeholder="例：sunscreen, UV, SPF, application amount, ...（カンマ区切り）"
-              />
-              <div className={helpClass}>
-                ※先行研究を調べるためのキーワードを、カンマ区切りで入力してください。
-              </div>
-            </div>
-
-            <button
-              onClick={save}
-              disabled={saving || !teamId}
-              className="w-full bg-blue-600 hover:bg-blue-500 text-white font-black py-4 rounded-2xl shadow-lg disabled:opacity-50 transition flex items-center justify-center gap-2"
-            >
-              <Download size={18} /> {saving ? "保存中..." : "保存（チーム共有）"}
-            </button>
-          </div>
-        </div>
-      );
-    };
-
-    // ===============================
-    // 【追加】教員用：アンケート状況パネル
-    // ===============================
-    const TeacherSurveyDashboard = ({ teamSurveyMap }) => {
-      const answered = TEAM_SURVEY_TEAMS.filter(t => !!teamSurveyMap?.[t]).length;
-      return (
-        <div className="max-w-6xl mx-auto px-4 pb-10">
-          <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-5 mt-10">
-            <div className="flex items-center justify-between gap-3 mb-3">
-              <h3 className="font-black text-lg text-gray-800 flex items-center gap-2">
-                <BarChart2 size={18} className="text-blue-600" /> アンケート回答状況（チーム共有）
-              </h3>
-              <div className="text-sm font-bold text-gray-500">
-                回答済み: {answered} / {TEAM_SURVEY_TEAMS.length}
-              </div>
-            </div>
-
-            <div className="overflow-x-auto">
-              <table className="w-full text-xs">
-                <thead>
-                  <tr className="text-gray-500 border-b">
-                    <th className="text-left py-2 pr-2">TEAM</th>
-                    <th className="text-left py-2 pr-2">題材</th>
-                    <th className="text-left py-2 pr-2">最終更新</th>
-                    <th className="text-left py-2 pr-2">更新者</th>
-                    <th className="text-left py-2 pr-2">状態</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {TEAM_SURVEY_TEAMS.map(t => {
-                    const d = teamSurveyMap?.[t] || null;
-                    const updated = d?.updatedAt ? fmtDateTime(d.updatedAt) : "";
-                    const status = d ? "回答あり" : "未回答";
-                    return (
-                      <tr key={t} className="border-b last:border-b-0">
-                        <td className="py-2 pr-2 font-bold text-gray-800 whitespace-nowrap">{t}</td>
-                        <td className="py-2 pr-2 text-gray-700">{d?.topic || ""}</td>
-                        <td className="py-2 pr-2 text-gray-500 whitespace-nowrap">{updated}</td>
-                        <td className="py-2 pr-2 text-gray-500">{d?.updatedBy || ""}</td>
-                        <td className={`py-2 pr-2 font-bold ${d ? "text-green-600" : "text-gray-400"}`}>{status}</td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-
-            <div className="text-[11px] text-gray-400 mt-3">
-              ※この一覧は <code className="px-1 bg-gray-100 rounded">teamSurveys</code> コレクションの内容を表示しています。
-            </div>
-          </div>
-        </div>
-      );
-    };
-
-    const TeacherPanel = ({
-      phase, studentCount, handleMatching, handlePublish, reset,
-      onExport, onExportSurvey, onImportData, students,
-      onDeleteStudent, onDeleteAll, isDemoMode, setIsDemoMode, onGenerateDemo, onSelectStudent,
-      surveyAnsweredCount
-    }) => {
+    const TeacherPanel = ({ phase, studentCount, handleMatching, handlePublish, reset, onExport, onImportData, students, onDeleteStudent, onDeleteAll, isDemoMode, setIsDemoMode, onGenerateDemo, onSelectStudent }) => {
       const updatePhase = async (newPhase) => { await setDoc(doc(db, "system", "config"), { phase: newPhase }, { merge: true }); };
 
       return (
@@ -1382,10 +1044,6 @@
               <div>
                 <h2 className="text-sm font-bold text-gray-400 uppercase tracking-widest mb-1">Control Panel</h2>
                 <div className="text-2xl font-bold flex items-center gap-3"><span>登録者数: {studentCount}名</span></div>
-                {/* 【追加】アンケート回答数表示（教員のみ視認用） */}
-                {typeof surveyAnsweredCount === "number" && (
-                  <div className="text-xs text-gray-400 mt-1">アンケート回答（チーム）: {surveyAnsweredCount} / {TEAM_SURVEY_TEAMS.length}</div>
-                )}
               </div>
 
               <div className="flex items-center gap-2 bg-gray-800 p-2 rounded-lg border border-gray-700">
@@ -1435,10 +1093,6 @@
                     </button>
                     <button onClick={onExport} className="bg-blue-600 hover:bg-blue-500 px-6 py-3 rounded-xl font-bold shadow-lg transition flex items-center gap-2">
                       <Download size={18} /> CSV出力
-                    </button>
-                    {/* 【追加】アンケートCSV出力 */}
-                    <button onClick={onExportSurvey} className="bg-emerald-600 hover:bg-emerald-500 px-6 py-3 rounded-xl font-bold shadow-lg transition flex items-center gap-2">
-                      <BarChart2 size={18} /> アンケートCSV
                     </button>
                     <div className="flex flex-col gap-1">
                       <button onClick={reset} className="border border-red-500/50 text-red-400 hover:bg-red-500/10 px-4 py-2 rounded-lg font-bold text-xs transition">
@@ -1840,9 +1494,6 @@
       const myGroupMemberIds = myGroupData ? (myGroupData.members || myGroupData) : [];
       const myGroupMembers = myGroupMemberIds.map(id => students.find(s => s.id === id)).filter(Boolean);
 
-      // 【追加】自分のTEAMラベル（TEAM 01形式）を算出してアンケート保存先に使う
-      const myTeamIdLabel = (myGroupIndex !== -1) ? `TEAM ${String(myGroupIndex + 1).padStart(2, "0")}` : "";
-
       return (
         <div className="min-h-screen bg-gradient-to-b from-blue-50 to-white p-6 pt-12 relative">
           <div className="max-w-2xl mx-auto">
@@ -1885,9 +1536,6 @@
                 );
               })}
             </div>
-
-            {/* 【追加】チームアンケート（チーム共有・編集） */}
-            <TeamSurveyPanel teamId={myTeamIdLabel} currentUser={currentUser} />
           </div>
 
           {selectedMember && (
@@ -1969,7 +1617,6 @@
       const [user, setUser] = useState(null);
       const [currentUserData, setCurrentUserData] = useState(null);
       const [students, setStudents] = useState([]);
-      const [studentsLoaded, setStudentsLoaded] = useState(false); // ★追加：CHECKでの先読み不足対策
       const [phase, setPhase] = useState(PHASE.INPUT);
       const [groups, setGroups] = useState([]);
       const [errorMsg, setErrorMsg] = useState("");
@@ -1977,18 +1624,12 @@
       const [selectedStudent, setSelectedStudent] = useState(null);
       const [moveTargetGroup, setMoveTargetGroup] = useState("");
 
-      // ★追加：自分のユーザdoc（登録確認）が読み込めたか
-      const [userDocLoaded, setUserDocLoaded] = useState(false);
-
       // 【追加】CHECK投票のバッファ（30件まとめて保存）
       const [pendingVotes, setPendingVotes] = useState({});
       const [pendingLoaded, setPendingLoaded] = useState(false);
       const [isFlushingVotes, setIsFlushingVotes] = useState(false);
 
       const NEW_TEAM_VALUE = "__NEW_TEAM__"; // 【追加】モーダル内で「新しい班を作成」用
-
-      // 【追加】教員用：チームアンケート全体
-      const [teamSurveyMap, setTeamSurveyMap] = useState({});
 
       useEffect(() => {
         const timer = setTimeout(() => {
@@ -2006,53 +1647,38 @@
         return () => unsubscribe();
       }, []);
 
-      // User Data Listener（登録確認：ここが完了するまで重い購読を開始しない）
+      // User Data Listener
       useEffect(() => {
-        setUserDocLoaded(false);
-        setStudents([]);
-        setStudentsLoaded(false);
-
         if (!user) {
           setCurrentUserData(null);
           return;
         }
-
         const unsubUser = onSnapshot(doc(db, "users", user.email), (docSnap) => {
           if (docSnap.exists()) {
             setCurrentUserData(docSnap.data());
-            setErrorMsg("");
           } else {
             setErrorMsg("このアカウントは登録されていません。管理者に問い合わせてください。");
             signOut(auth);
           }
-          setUserDocLoaded(true);
         }, (error) => {
           console.error("User listener error:", error);
-          setUserDocLoaded(true);
         });
-
         return () => unsubUser();
       }, [user]);
 
-      // ★修正：system/config は「登録確認後」に購読開始（余計な初回負荷を避ける）
       useEffect(() => {
-        if (!user || !userDocLoaded || !currentUserData || errorMsg) return;
+        if (!user) return;
 
         const unsubSystem = onSnapshot(doc(db, "system", "config"), (docSnap) => {
           if (docSnap.exists()) setPhase(docSnap.data().phase || PHASE.INPUT);
         });
 
-        return () => { unsubSystem(); };
-      }, [user, userDocLoaded, currentUserData?.role, errorMsg]);
-
-      // ★修正：groups は teacher か、学生で MATCHING/PUBLISH のときだけ購読
-      useEffect(() => {
-        if (!user || !userDocLoaded || !currentUserData || errorMsg) { setGroups([]); return; }
-
-        const isTeacher = currentUserData.role === "teacher" || currentUserData.role === "admin";
-        const needGroups = isTeacher || phase === PHASE.MATCHING || phase === PHASE.PUBLISH;
-
-        if (!needGroups) { setGroups([]); return; }
+        const unsubStudents = onSnapshot(collection(db, "users"), (snapshot) => {
+          const loadedStudents = snapshot.docs
+            .map(d => ({ id: d.id, ...d.data() }))
+            .filter(u => u.role !== "teacher" && u.role !== "admin");
+          setStudents(loadedStudents);
+        });
 
         const unsubGroups = onSnapshot(doc(db, "system", "groups"), (docSnap) => {
           if (docSnap.exists()) {
@@ -2064,76 +1690,8 @@
           }
         });
 
-        return () => { unsubGroups(); };
-      }, [user, userDocLoaded, currentUserData?.role, phase, errorMsg]);
-
-      // ★修正：students の取得方法
-      // - teacher: realtime (従来通り)
-      // - student: INPUT中は不要なので取得しない / CHECK等必要なときだけ「1回 getDocs」(realtime購読しない)
-      useEffect(() => {
-        if (!user || !userDocLoaded || !currentUserData || errorMsg) { setStudents([]); setStudentsLoaded(false); return; }
-
-        const isTeacher = currentUserData.role === "teacher" || currentUserData.role === "admin";
-        const needStudents = isTeacher || phase === PHASE.CHECK || phase === PHASE.MATCHING || phase === PHASE.PUBLISH;
-
-        if (!needStudents) {
-          setStudents([]);
-          setStudentsLoaded(false);
-          return;
-        }
-
-        // teacher: 従来通り realtime
-        if (isTeacher) {
-          setStudentsLoaded(false);
-          const unsubStudents = onSnapshot(collection(db, "users"), (snapshot) => {
-            const loadedStudents = snapshot.docs
-              .map(d => ({ id: d.id, ...d.data() }))
-              .filter(u => u.role !== "teacher" && u.role !== "admin");
-            setStudents(loadedStudents);
-            setStudentsLoaded(true);
-          }, (e) => {
-            console.error("Students snapshot error:", e);
-            setStudentsLoaded(true);
-          });
-
-          return () => { unsubStudents(); };
-        }
-
-        // student: 1回だけ取得（読み取り回数と更新追従を削減）
-        let cancelled = false;
-        (async () => {
-          setStudentsLoaded(false);
-          try {
-            const snap = await getDocs(collection(db, "users"));
-            if (cancelled) return;
-            const loaded = snap.docs
-              .map(d => ({ id: d.id, ...d.data() }))
-              .filter(u => u.role !== "teacher" && u.role !== "admin");
-            setStudents(loaded);
-          } catch (e) {
-            console.error("Students getDocs error:", e);
-          } finally {
-            if (!cancelled) setStudentsLoaded(true);
-          }
-        })();
-
-        return () => { cancelled = true; };
-      }, [user, userDocLoaded, currentUserData?.role, phase, errorMsg]);
-
-      // 【追加】教員：teamSurveys を購読（回答状況確認＆CSV用）
-      useEffect(() => {
-        if (!user || !currentUserData) { setTeamSurveyMap({}); return; }
-        const isTeacher = currentUserData.role === "teacher" || currentUserData.role === "admin";
-        if (!isTeacher) { setTeamSurveyMap({}); return; }
-
-        const unsub = onSnapshot(collection(db, "teamSurveys"), (snap) => {
-          const map = {};
-          snap.docs.forEach(d => { map[d.id] = d.data(); });
-          setTeamSurveyMap(map);
-        }, (e) => console.error("teamSurveys snapshot error:", e));
-
-        return () => unsub();
-      }, [user, currentUserData?.role]);
+        return () => { unsubSystem(); unsubStudents(); unsubGroups(); };
+      }, [user]);
 
       // 【追加】pendingVotesをlocalStorageから復元（CHECK中の通信削減のため）
       useEffect(() => {
@@ -2276,7 +1834,7 @@
           : ({ ...g, members: [...(g.members || [])], metrics: { ...(g.metrics || {}) } })
         );
 
-        if (targetGroupIdx === "__NEW_TEAM__") {
+        if (targetGroupIdx === NEW_TEAM_VALUE) {
           // 新規チームを末尾に追加
           newGroups.push({ members: [], metrics: {} });
           idx = newGroups.length - 1;
@@ -2431,39 +1989,6 @@
         document.body.removeChild(link);
       };
 
-      // 【追加】アンケートCSV出力（teamSurveys）
-      const handleExportSurveyCSV = () => {
-        const headers = ["TEAM", "題材", "問い", "測る指標・数", "操作する条件", "揃えるべき条件", "用語の定義", "キーワード", "最終更新", "更新者"];
-        const rows = [headers.map(escapeCsv).join(",")];
-
-        TEAM_SURVEY_TEAMS.forEach(teamId => {
-          const d = teamSurveyMap?.[teamId] || {};
-          rows.push([
-            escapeCsv(teamId),
-            escapeCsv(d.topic || ""),
-            escapeCsv(d.question || ""),
-            escapeCsv(d.metric || ""),
-            escapeCsv(d.manipulate || ""),
-            escapeCsv(d.control || ""),
-            escapeCsv(d.definition || ""),
-            escapeCsv(d.keywords || ""),
-            escapeCsv(d.updatedAt ? fmtDateTime(d.updatedAt) : ""),
-            escapeCsv(d.updatedBy || "")
-          ].join(","));
-        });
-
-        const csvContent = rows.join("\n");
-        const bom = new Uint8Array([0xEF, 0xBB, 0xBF]);
-        const blob = new Blob([bom, csvContent], { type: "text/csv;charset=utf-8;" });
-        const url = URL.createObjectURL(blob);
-        const link = document.createElement("a");
-        link.href = url;
-        link.setAttribute("download", "team_survey_answers.csv");
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-      };
-
       if (!user) return <LoginScreen onLogin={handleLogin} />;
       if (errorMsg) {
         return (
@@ -2474,9 +1999,7 @@
           </div>
         );
       }
-
-      // ★修正：user doc (登録確認) の読み込み完了まで軽量表示（無駄な購読開始を避ける）
-      if (!userDocLoaded || !currentUserData) return <div className="min-h-screen flex items-center justify-center">Loading...</div>;
+      if (!currentUserData) return <div className="min-h-screen flex items-center justify-center">Loading...</div>;
 
       const isTeacher = currentUserData.role === "teacher" || currentUserData.role === "admin";
 
@@ -2485,8 +2008,6 @@
       const currentUserForCheck = (phase === PHASE.CHECK)
         ? ({ ...currentUserData, votes: mergedVotesForCheck })
         : currentUserData;
-
-      const surveyAnsweredCount = TEAM_SURVEY_TEAMS.filter(t => !!teamSurveyMap?.[t]).length;
 
       return (
         <div className="min-h-screen bg-gray-50 font-sans text-gray-800 selection:bg-blue-200">
@@ -2513,7 +2034,6 @@
               handleMatching={handleMatching}
               handlePublish={handlePublish}
               onExport={handleExportCSV}
-              onExportSurvey={handleExportSurveyCSV}
               reset={handleReset}
               onImportData={handleImportData}
               onDeleteStudent={handleDeleteStudent}
@@ -2522,7 +2042,6 @@
               setIsDemoMode={setIsDemoMode}
               onGenerateDemo={handleGenerateMock}
               onSelectStudent={setSelectedStudent}
-              surveyAnsweredCount={surveyAnsweredCount}
             />
           )}
 
@@ -2535,9 +2054,8 @@
                   </div>
                 )}
                 {phase === PHASE.INPUT && <ModernInputForm currentUser={currentUserData} onSave={handleSaveProfile} />}
-
                 {phase === PHASE.CHECK && (
-                  (!isTeacher && (!pendingLoaded || !studentsLoaded))
+                  (!pendingLoaded && !isTeacher)
                     ? <div className="min-h-[60vh] flex items-center justify-center text-gray-500">Loading...</div>
                     : <CardStack currentUser={currentUserForCheck} students={students} onVote={handleVote} />
                 )}
@@ -2600,11 +2118,6 @@
                   })}
                 </div>
               </div>
-            )}
-
-            {/* 【追加】教員：アンケート回答状況パネル（PUBLISH時） */}
-            {isTeacher && phase === PHASE.PUBLISH && (
-              <TeacherSurveyDashboard teamSurveyMap={teamSurveyMap} />
             )}
           </main>
 
@@ -2686,7 +2199,7 @@
 
                 <div className="flex gap-2">
                   {(phase === PHASE.INPUT || phase === PHASE.CHECK) && (
-                    <button onClick={() => { handleDeleteStudent(selectedStudent.id); setSelectedStudent(null); }} className="flex-1 bg-red-500 hover:bg-red-600 text-white py-3 rounded-xl font-bold flex items-center justify-center gap-2">
+                    <button onClick={() => { onDeleteStudent(selectedStudent.id); setSelectedStudent(null); }} className="flex-1 bg-red-500 hover:bg-red-600 text-white py-3 rounded-xl font-bold flex items-center justify-center gap-2">
                       <Trash2 size={18} /> 登録抹消
                     </button>
                   )}
